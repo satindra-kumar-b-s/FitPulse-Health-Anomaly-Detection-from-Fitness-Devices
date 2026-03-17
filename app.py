@@ -1,883 +1,1246 @@
-"""
-FitPulse ML Pipeline — Streamlit UI
-Milestone 2 · Feature Extraction & Modeling
-"""
-
+import io
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# ── Page config ──────────────────────────────────────────────────────────────
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.cluster import KMeans, DBSCAN
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+from prophet import Prophet
+from tsfresh import extract_features
+from tsfresh.feature_extraction import MinimalFCParameters
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="FitPulse · Milestone 2",
-    page_icon="🧬",
+    page_title="FitPulse ML Pipeline",
+    page_icon="🩺",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-# ── Custom CSS ────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# GLOBAL CSS
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --bg-base:  #0b0f1a;
-    --bg-card:  #111827;
-    --bg-card2: #161d2e;
-    --bg-hover: #1e2a3d;
-    --accent:   #3b82f6;
-    --accent2:  #818cf8;
-    --green:    #22c55e;
-    --red:      #ef4444;
-    --amber:    #f59e0b;
-    --pink:     #ec4899;
-    --text:     #e2e8f0;
-    --muted:    #64748b;
-    --border:   #1e2a3d;
-    --mono: 'JetBrains Mono', monospace;
-    --sans: 'Space Grotesk', sans-serif;
+  --bg:      #070c14;
+  --surface: #0d1526;
+  --glass:   rgba(255,255,255,0.04);
+  --border:  rgba(99,215,196,0.18);
+  --accent:  #63d7c4;
+  --accent2: #f97316;
+  --accent3: #818cf8;
+  --text:    #e2eaf4;
+  --muted:   #6b7a96;
+  --success: #34d399;
+  --danger:  #f87171;
+  --warn:    #fbbf24;
 }
 
-html, body, [class*="css"] {
-    background-color: var(--bg-base) !important;
-    color: var(--text) !important;
-    font-family: var(--sans) !important;
+html, body, [data-testid="stAppViewContainer"] {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+  font-family: 'Syne', sans-serif !important;
 }
-
-/* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background-color: #0d1120 !important;
-    border-right: 1px solid var(--border) !important;
-    transition: width 0.3s ease !important;
+  background: var(--surface) !important;
+  border-right: 1px solid var(--border) !important;
 }
-[data-testid="stSidebar"] * { color: var(--text) !important; }
+[data-testid="stSidebar"] * { font-family: 'Syne', sans-serif !important; }
 
-/* ── Headers ── */
-h1, h2, h3 { font-family: var(--sans) !important; color: var(--text) !important; }
+h1 { font-size:2rem !important; font-weight:800 !important; color:var(--text) !important; }
+h2 { font-size:1.4rem !important; font-weight:700 !important; color:var(--accent) !important; }
+h3 { font-size:1.1rem !important; font-weight:600 !important; color:var(--text) !important; }
+p, li, label, span { color: var(--text) !important; }
 
-/* ── Metric cards ── */
-[data-testid="metric-container"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 12px !important;
-    padding: 1rem !important;
-}
-[data-testid="stMetricValue"] {
-    font-family: var(--mono) !important;
-    font-size: 2rem !important;
-    color: var(--accent) !important;
-    font-weight: 700 !important;
-}
-[data-testid="stMetricLabel"] {
-    font-family: var(--mono) !important;
-    font-size: 0.65rem !important;
-    letter-spacing: 0.1em !important;
-    color: var(--muted) !important;
-    text-transform: uppercase !important;
-}
-
-/* ── Buttons ── */
 .stButton > button {
-    background: var(--bg-card) !important;
-    color: var(--text) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-    font-family: var(--mono) !important;
-    font-size: 0.8rem !important;
-    padding: 0.5rem 1.2rem !important;
-    transition: all 0.2s ease !important;
+  background: linear-gradient(135deg,#1a2f4a,#0f1f36) !important;
+  color: var(--accent) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  font-family: 'Syne',sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 0.9rem !important;
+  padding: 0.5rem 1.4rem !important;
+  transition: all 0.25s ease !important;
+  box-shadow: 0 0 12px rgba(99,215,196,0.08) !important;
 }
 .stButton > button:hover {
-    background: var(--bg-hover) !important;
-    border-color: var(--accent) !important;
-    color: var(--accent) !important;
-}
-.stButton > button[kind="primary"] {
-    background: var(--accent) !important;
-    border-color: var(--accent) !important;
-    color: #fff !important;
+  border-color: var(--accent) !important;
+  background: linear-gradient(135deg,#1f3d5c,#162c46) !important;
+  box-shadow: 0 0 20px rgba(99,215,196,0.2) !important;
+  transform: translateY(-1px) !important;
 }
 
-/* ── File uploader ── */
-[data-testid="stFileUploaderDropzone"] {
-    background: var(--bg-card) !important;
-    border: 1.5px dashed var(--border) !important;
-    border-radius: 10px !important;
+[data-testid="stMetric"] {
+  background: var(--glass) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  padding: 1rem 1.2rem !important;
+}
+[data-testid="stMetricLabel"] {
+  color:var(--muted) !important; font-size:0.75rem !important;
+  text-transform:uppercase; letter-spacing:1px;
+}
+[data-testid="stMetricValue"] {
+  color:var(--accent) !important; font-size:1.8rem !important; font-weight:800 !important;
 }
 
-/* ── Progress bar ── */
-.stProgress > div > div > div > div {
-    background: linear-gradient(90deg, var(--accent), var(--accent2)) !important;
+.stSlider [data-baseweb="slider"] { padding:0 !important; }
+.stSlider label {
+  color:var(--muted) !important; font-size:0.8rem !important;
+  text-transform:uppercase; letter-spacing:0.8px;
 }
 
-/* ── Dataframe ── */
-[data-testid="stDataFrame"] {
-    background: var(--bg-card) !important;
-    border-radius: 10px !important;
-    border: 1px solid var(--border) !important;
+.stAlert { border-radius:12px !important; border-left-width:4px !important; }
+.stDataFrame { border-radius:12px !important; overflow:hidden; }
+
+[data-testid="stFileUploader"] {
+  background: var(--glass) !important;
+  border: 1.5px dashed var(--border) !important;
+  border-radius: 14px !important;
+  padding: 1rem !important;
 }
 
-/* ── Expander ── */
-[data-testid="stExpander"] {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
+hr { border-color:var(--border) !important; }
+.element-container img { border-radius:12px; }
+
+.fp-card {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem 1.6rem;
+  margin-bottom: 1.2rem;
+  backdrop-filter: blur(10px);
 }
 
-/* ── Info / success banners ── */
-.stAlert {
-    border-radius: 8px !important;
-    font-family: var(--mono) !important;
-    font-size: 0.82rem !important;
+.fp-badge {
+  display:inline-block; padding:3px 10px; border-radius:20px;
+  font-size:0.72rem; font-weight:700; letter-spacing:0.6px; text-transform:uppercase;
+}
+.fp-badge-ok   { background:rgba(52,211,153,0.15); color:#34d399; border:1px solid rgba(52,211,153,0.3); }
+.fp-badge-miss { background:rgba(248,113,113,0.15); color:#f87171; border:1px solid rgba(248,113,113,0.3); }
+
+.step-header {
+  display:inline-flex; align-items:center; gap:10px;
+  background:rgba(99,215,196,0.07);
+  border:1px solid rgba(99,215,196,0.2);
+  border-radius:10px;
+  padding:7px 16px;
+  margin:1.2rem 0 0.8rem 0;
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.82rem;
+  color:var(--accent);
+  font-weight:600;
+  letter-spacing:0.5px;
 }
 
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: var(--bg-card) !important;
-    border-radius: 10px 10px 0 0 !important;
-    gap: 2px !important;
+.null-card {
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(99,215,196,0.12);
+  border-radius:14px;
+  padding:16px 14px 12px 14px;
 }
-.stTabs [data-baseweb="tab"] {
-    background: transparent !important;
-    color: var(--muted) !important;
-    font-family: var(--mono) !important;
-    font-size: 0.8rem !important;
-    border-radius: 8px !important;
+.null-card-name {
+  font-size:0.78rem; color:#6b7a96; margin-bottom:8px;
+  font-family:'JetBrains Mono',monospace;
 }
-.stTabs [aria-selected="true"] {
-    background: var(--bg-hover) !important;
-    color: var(--accent) !important;
+.null-val-ok  { font-size:1.6rem; color:#34d399; }
+.null-val-bad { font-size:1.3rem; color:#f87171; font-weight:800; font-family:'JetBrains Mono',monospace; }
+.null-rows    { font-size:0.7rem; color:#6b7a96; margin-top:5px; }
+
+.log-box {
+  background:rgba(255,255,255,0.02);
+  border:1px solid rgba(99,215,196,0.12);
+  border-radius:12px;
+  padding:1.1rem 1.4rem;
+  font-family:'JetBrains Mono',monospace;
+  font-size:0.8rem;
+  line-height:2;
 }
 
-/* ── Section header cards ── */
-.section-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 0.75rem 1.2rem;
-    background: var(--bg-card);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 8px 8px 0;
-    margin-bottom: 1rem;
-    font-family: var(--sans); font-weight: 600; font-size: 1.1rem;
+.prog-bar-bg   {
+  background:rgba(255,255,255,0.06); border-radius:10px;
+  height:6px; width:100%; margin:6px 0 14px 0;
 }
-.section-header .steps-badge {
-    margin-left: auto;
-    background: var(--bg-hover); color: var(--muted);
-    font-size: 0.7rem; font-family: var(--mono);
-    padding: 2px 10px; border-radius: 20px; border: 1px solid var(--border);
+.prog-bar-fill {
+  background:linear-gradient(90deg,#63d7c4,#818cf8);
+  border-radius:10px; height:6px;
 }
 
-/* ── File cards ── */
-.file-card {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 0.8rem 1rem; text-align: center;
-    font-family: var(--mono); font-size: 0.75rem;
-}
-.file-card.found   { border-color: #1a3a2a; }
-.file-card.missing { border-color: #3a1a1a; }
-.file-card .label  { color: var(--muted); font-size: 0.65rem; letter-spacing: 0.08em; margin-top: 4px; }
-
-/* ── Step labels ── */
-.step-label {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono); font-size: 0.75rem; color: var(--accent2);
-    background: #1a1f35; border: 1px solid #2a3050; border-radius: 6px;
-    padding: 3px 10px; margin-bottom: 0.75rem;
-}
-
-/* ── Cluster cards ── */
-.cluster-card {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 12px; padding: 1.2rem;
-}
-.cluster-badge {
-    display: inline-block; font-size: 0.65rem; font-family: var(--mono);
-    letter-spacing: 0.08em; padding: 2px 10px; border-radius: 20px; margin-bottom: 0.6rem;
-}
-.badge-mod  { background: #1a2e1a; color: #4ade80; }
-.badge-sed  { background: #2e1a1a; color: #f87171; }
-.badge-high { background: #1a2333; color: #60a5fa; }
-
-/* ── Summary rows ── */
-.summary-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 0.6rem 0; border-bottom: 1px solid var(--border);
-    font-family: var(--sans); font-size: 0.9rem;
-}
-.summary-row:last-child { border-bottom: none; }
-.summary-detail { margin-left: auto; color: var(--muted); font-size: 0.8rem; font-family: var(--mono); }
-
-/* ── Screenshot badge ── */
-.screenshot-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono); font-size: 0.72rem; color: var(--pink);
-    background: #2a1525; border: 1px solid #3d1d35; border-radius: 6px;
-    padding: 3px 10px; margin-bottom: 0.5rem;
-}
-
-/* ── Sidebar nav items ── */
-.nav-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 0; font-size: 0.85rem; font-family: var(--sans);
-}
-.nav-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.nav-dot.done   { background: var(--green); }
-.nav-dot.active { background: var(--accent); }
-.nav-dot.idle   { border: 1px solid var(--muted); background: transparent; }
-
-/* ── Log block ── */
-.log-block {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 1rem 1.2rem;
-    font-family: var(--mono); font-size: 0.8rem; line-height: 1.8;
-}
-.log-ok   { color: var(--green); }
-.log-warn { color: var(--amber); }
-.log-val  { color: #93c5fd; font-weight: 600; }
-
-/* ── Hide only the hamburger menu and footer, keep header for toggle ── */
-#MainMenu { visibility: hidden; }
-footer    { visibility: hidden; }
-[data-testid="stDecoration"] { display: none; }
-[data-testid="stToolbar"]    { visibility: hidden; }
-
-/* Keep header transparent so sidebar toggle button is still visible */
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    border-bottom: none !important;
-}
-
-/* ── Style Streamlit's native collapse button ── */
-[data-testid="collapsedControl"] {
-    background: #1e2a3d !important;
-    border: 1px solid #3b82f6 !important;
-    border-left: none !important;
-    border-radius: 0 8px 8px 0 !important;
-    color: #3b82f6 !important;
-    box-shadow: 2px 0 10px rgba(59,130,246,0.2) !important;
-}
-[data-testid="collapsedControl"]:hover {
-    background: #3b82f6 !important;
-    color: #fff !important;
-}
-[data-testid="collapsedControl"] svg {
-    fill: #3b82f6 !important;
-}
-[data-testid="collapsedControl"]:hover svg {
-    fill: #fff !important;
-}
-
-/* Style the close (collapse) button inside the sidebar */
-[data-testid="stSidebarCollapseButton"] {
-    background: transparent !important;
-}
-[data-testid="stSidebarCollapseButton"] button {
-    color: var(--muted) !important;
-    background: transparent !important;
-    border-radius: 8px !important;
-    transition: all 0.2s !important;
-}
-[data-testid="stSidebarCollapseButton"] button:hover {
-    color: var(--accent) !important;
-    background: var(--bg-hover) !important;
-}
-[data-testid="stSidebarCollapseButton"] svg {
-    fill: var(--muted) !important;
-}
-[data-testid="stSidebarCollapseButton"] button:hover svg {
-    fill: var(--accent) !important;
-}
-
-.block-container { padding-top: 1.5rem !important; }
+.nav-item { display:flex; align-items:center; gap:9px; padding:5px 0; font-size:0.83rem; }
+.nav-dot-active   { width:8px;height:8px;border-radius:50%;background:#63d7c4;flex-shrink:0; }
+.nav-dot-inactive { width:8px;height:8px;border-radius:50%;border:1.5px solid #6b7a96;flex-shrink:0; }
+.nav-label-active   { color:#e2eaf4; font-weight:600; }
+.nav-label-inactive { color:#6b7a96; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Sidebar toggle (runs in top-level frame via components.html) ───────────
-import streamlit.components.v1 as _components
-_components.html("""
-<script>
-(function() {
-  function getRoot() {
-    // Walk up from this iframe to the top window
-    try { return window.top; } catch(e) { return window; }
-  }
+# ─────────────────────────────────────────────────────────────────────────────
+# MATPLOTLIB THEME
+# ─────────────────────────────────────────────────────────────────────────────
+plt.rcParams.update({
+    "figure.facecolor": "#0d1526", "axes.facecolor": "#0d1526",
+    "axes.edgecolor":   "#1e3050", "axes.labelcolor": "#e2eaf4",
+    "axes.titlecolor":  "#63d7c4", "axes.grid": True,
+    "grid.color":       "#1a2d44", "grid.linestyle": "--", "grid.linewidth": 0.5,
+    "xtick.color":      "#6b7a96", "ytick.color": "#6b7a96",
+    "text.color":       "#e2eaf4", "legend.facecolor": "#0d1526",
+    "legend.edgecolor": "#1e3050", "font.family": "monospace",
+})
+PALETTE = ["#63d7c4","#f97316","#818cf8","#fbbf24","#34d399","#f87171","#60a5fa","#e879f9"]
 
-  function syncBtn() {
-    var root = getRoot();
-    var btn  = root.document.getElementById('fp-sb-reopen');
-    if (!btn) return;
-    var collapsed = !!root.document.querySelector('[data-testid="collapsedControl"]');
-    btn.style.opacity        = collapsed ? '1'    : '0';
-    btn.style.pointerEvents  = collapsed ? 'all'  : 'none';
-  }
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+def fig_to_bytes(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+    buf.seek(0)
+    plt.close(fig)
+    return buf.getvalue()
 
-  function ensureBtn() {
-    var root = getRoot();
-    if (root.document.getElementById('fp-sb-reopen')) return;
-
-    var btn = root.document.createElement('div');
-    btn.id = 'fp-sb-reopen';
-    btn.title = 'Open sidebar';
-    btn.innerHTML = '&#x276F;&#x276F;';
-    btn.style.cssText = [
-      'position:fixed', 'top:50%', 'left:0',
-      'transform:translateY(-50%)',
-      'z-index:2147483647',
-      'width:22px', 'height:60px',
-      'background:#1e2a3d',
-      'border:1px solid #3b82f6',
-      'border-left:none',
-      'border-radius:0 8px 8px 0',
-      'color:#3b82f6',
-      'font-size:0.72rem', 'font-weight:700',
-      'font-family:JetBrains Mono,monospace',
-      'cursor:pointer',
-      'display:flex', 'align-items:center', 'justify-content:center',
-      'transition:background 0.2s,color 0.2s',
-      'box-shadow:2px 0 12px rgba(59,130,246,0.25)',
-      'user-select:none',
-      'opacity:0', 'pointer-events:none'
-    ].join(';');
-
-    btn.onmouseover = function() { btn.style.background='#3b82f6'; btn.style.color='#fff'; };
-    btn.onmouseout  = function() { btn.style.background='#1e2a3d'; btn.style.color='#3b82f6'; };
-    btn.onclick = function() {
-      var native = root.document.querySelector('[data-testid="collapsedControl"]');
-      if (native) native.click();
-    };
-
-    root.document.body.appendChild(btn);
-  }
-
-  function init() {
-    ensureBtn();
-    syncBtn();
-    setInterval(function() { ensureBtn(); syncBtn(); }, 300);
-    var obs = new MutationObserver(function() { ensureBtn(); syncBtn(); });
-    obs.observe(getRoot().document.body, { childList: true, subtree: true });
-  }
-
-  if (getRoot().document.readyState === 'loading') {
-    getRoot().document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
-</script>
-""", height=0)
-
-# ── Session state ─────────────────────────────────────────────────────────────
-for k, v in {
-    "files_loaded": False,
-    "tsfresh_done": False,
-    "prophet_done": False,
-    "cluster_done": False,
-    "uploaded": {},
-}.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
-
-def pipeline_pct():
-    stages = [st.session_state.files_loaded, st.session_state.tsfresh_done,
-              st.session_state.prophet_done, st.session_state.cluster_done]
-    return int(sum(stages) / len(stages) * 100)
-
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### 🧬 FitPulse")
-    st.caption("Milestone 2 · ML Pipeline")
-    st.divider()
-
-    pct = pipeline_pct()
-    st.markdown(f"**PIPELINE PROGRESS** · `{pct}%`")
-    st.progress(pct / 100)
-    st.markdown("")
-
-    stages = [
-        ("📁", "Data Loading",    st.session_state.files_loaded),
-        ("⚗️", "TSFresh Features", st.session_state.tsfresh_done),
-        ("📅", "Prophet Forecast", st.session_state.prophet_done),
-        ("🔵", "Clustering",       st.session_state.cluster_done),
-    ]
-    for icon, label, done in stages:
-        dot_cls = "done" if done else "idle"
-        st.markdown(
-            f'<div class="nav-item"><span class="nav-dot {dot_cls}"></span>{icon} {label}</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.divider()
-    st.markdown("**KMEANS CLUSTERS (K)**")
-    k_val = st.slider("", 2, 9, 3, key="k_slider", label_visibility="collapsed")
-    st.markdown("**DBSCAN EPS**")
-    eps_val = st.slider("", 0.5, 5.0, 2.2, step=0.1, key="eps_slider", label_visibility="collapsed")
-    st.divider()
-    st.caption("Real Fitbit Dataset\n30 users · March–April 2016\nMinute-level HR data")
-
-# ── HERO ──────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 100%);
-            border:1px solid #2a3050;border-radius:14px;padding:2rem 2.5rem;margin-bottom:2rem;">
-  <div style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;letter-spacing:0.15em;
-              color:#818cf8;background:#1e1b4b;border:1px solid #3730a3;
-              display:inline-block;padding:4px 14px;border-radius:20px;margin-bottom:1rem;">
-    MILESTONE 2 · FEATURE EXTRACTION & MODELING
-  </div>
-  <h1 style="font-size:2.4rem;font-weight:700;margin:0 0 0.4rem;">🧬 FitPulse ML Pipeline</h1>
-  <p style="color:#64748b;font-family:'JetBrains Mono',monospace;font-size:0.8rem;margin:0;">
-    TSFresh · Prophet · KMeans · DBSCAN · PCA · t-SNE — Real Fitbit Device Data
-  </p>
-</div>
-""", unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — DATA LOADING
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="section-header">
-  📁 Data Loading
-  <span class="steps-badge">Steps 1–9</span>
-</div>
-""", unsafe_allow_html=True)
-
-st.info("ℹ️ Select all 5 Fitbit CSV files at once using the uploader below. Files are auto-detected by their column structure — no need to rename them.")
-
-uploaded_files = st.file_uploader(
-    "📁 Drop all 5 Fitbit CSV files here (select multiple at once)",
-    type=["csv"], accept_multiple_files=True, key="csv_uploader",
-)
-
-REQUIRED = {
-    "Daily Activity":     ["TotalSteps", "Calories", "VeryActiveMinutes"],
-    "Hourly Steps":       ["StepTotal"],
-    "Hourly Intensities": ["TotalIntensity", "AverageIntensity"],
-    "Minute Sleep":       ["logId", "value", "date"],
-    "Heart Rate":         ["Value", "Time"],
-}
-
-detected = {}
-if uploaded_files:
-    for f in uploaded_files:
-        try:
-            df = pd.read_csv(f, nrows=3)
-            cols = set(df.columns)
-            for name, keys in REQUIRED.items():
-                if all(k in cols for k in keys):
-                    detected[name] = df; break
-        except Exception:
-            pass
-
-cols5 = st.columns(5)
-for col, (fname, icon) in zip(cols5, zip(list(REQUIRED.keys()), ["🏃","👟","⚡","😴","❤️"])):
-    found = fname in detected
-    color = "#22c55e" if found else "#ef4444"
-    with col:
-        st.markdown(f"""
-        <div class="file-card {'found' if found else 'missing'}">
-          <div style="font-size:1.3rem">{'✅' if found else '❌'} {icon}</div>
-          <div style="color:{color};font-weight:600;font-size:0.8rem;margin-top:4px;">{fname}</div>
-          <div class="label">{'Found ✓' if found else 'Missing'}</div>
-        </div>""", unsafe_allow_html=True)
-
-st.markdown("")
-c1, c2, c3 = st.columns(3)
-n_detected = len(detected); n_missing = len(REQUIRED) - n_detected
-with c1: st.metric("DETECTED", n_detected)
-with c2: st.metric("MISSING", n_missing)
-with c3: st.metric("READY TO LOAD", "✓" if n_detected == 5 else "✗")
-
-if n_missing:
-    st.warning(f"⚠️ Still missing: {', '.join(k for k in REQUIRED if k not in detected)}")
-else:
-    st.success("✅ All 5 required files detected — ready to process!")
-
-if st.button("⚡ Load & Parse All Files", disabled=(n_detected < 5), type="primary"):
-    with st.spinner("Loading and building master DataFrame…"):
-        import time; time.sleep(1.2)
-    st.session_state.files_loaded = True
-    st.success("✅ All 5 files loaded and master DataFrame built")
-    st.rerun()
-
-if st.session_state.files_loaded:
-    st.success("✅ All 5 files loaded and master DataFrame built")
-
-    st.markdown('<div class="step-label">◆ Step 4 · Null Value Check</div>', unsafe_allow_html=True)
-    ncols = st.columns(5)
-    null_data = [("dailyActivity",457,0),("hourlySteps",24_084,0),
-                 ("hourlyIntensities",24_084,0),("minuteSleep",198_559,0),
-                 ("heartrate",1_048_575,2_080_457)]
-    for col,(name,rows,nulls) in zip(ncols, null_data):
-        color = "#ef4444" if nulls else "#22c55e"
-        with col:
-            st.markdown(f"""
-            <div class="file-card" style="border-color:{'#3a1a1a' if nulls else '#1a3a2a'}">
-              <div style="font-size:0.7rem;color:#94a3b8;font-family:var(--mono);">{name}</div>
-              <div style="font-size:1.6rem;margin:4px 0;">{'🔴' if nulls else '🟢'}</div>
-              <div style="color:{color};font-size:0.85rem;font-weight:700;">{f'{nulls:,}' if nulls else '0'}</div>
-              <div class="label">nulls · {rows:,} rows</div>
-            </div>""", unsafe_allow_html=True)
-
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 7 · Time Normalization Log</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="log-block">
-      <div><span class="log-ok">✅ HR resampled</span> &nbsp; seconds → <span class="log-val">1-minute intervals</span></div>
-      <div style="padding-left:1.5rem;color:#94a3b8;">Rows before : <span class="log-val">1,048,575</span> &nbsp;|&nbsp; Rows after : <span class="log-val">1,510</span></div>
-      <div><span class="log-ok">✅ Date range</span> &nbsp; <span class="log-val">2016-03-12 → 2016-04-12</span> (31 days)</div>
-      <div><span class="log-ok">✅ Hourly frequency</span> &nbsp; 1.0h median &nbsp;|&nbsp; 100.0% exact 1-hour</div>
-      <div><span class="log-ok">✅ Sleep stages</span> &nbsp; 1=Light · 2=Deep · 3=REM &nbsp;|&nbsp; <span class="log-val">198,559 records</span></div>
-      <div><span class="log-warn">⚠️ Timezone</span> &nbsp; Local time — UTC normalization not applicable</div>
+def step_hdr(num, label):
+    st.markdown(f"""
+    <div class='step-header'>
+      <span style='color:#f97316'>◆</span>
+      Step {num}
+      <span style='color:#f97316;font-size:0.6rem'>·</span>
+      {label}
     </div>""", unsafe_allow_html=True)
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 5 · Dataset Overview</div>', unsafe_allow_html=True)
-    mc = st.columns(5)
-    for col,(v,l) in zip(mc,[("35","DAILY USERS"),("1","HR USERS"),("23","SLEEP USERS"),("1,510","HR MINUTE ROWS"),("457","MASTER ROWS")]):
-        with col: st.metric(l, v)
+# ─────────────────────────────────────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────────────────────────────────────
+for k in ["files_loaded", "tsfresh_done", "prophet_done", "cluster_done"]:
+    if k not in st.session_state:
+        st.session_state[k] = False
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 9 · Cleaned Dataset Preview</div>', unsafe_allow_html=True)
-    st.dataframe(pd.DataFrame({
-        "Id":[1503960366]*7,"Date":[f"2016-03-{d:02d}" for d in range(25,32)],
-        "TotalSteps":[11004,17609,12736,13231,12041,10970,12256],
-        "Calories":[1819,2154,1944,1932,1886,1820,1889],"AvgHR":["None"]*7,
-        "TotalSleepMinutes":[386,472,506,77,378,0,336],
-        "VeryActiveMinutes":[33,89,56,39,28,30,33],"SedentaryMinutes":[804,588,605,1080,763,1174,820],
-    }), use_container_width=True, hide_index=False)
+for k in ["daily","steps","intensity","sleep","hr","features",
+          "master_df","cluster_summary",
+          "tsfresh_fig","prophet_fig","cluster_fig",
+          "cluster_bar_fig","elbow_fig","steps_sleep_fig",
+          "X_scaled","km_labels","db_labels","k_val_used","available_cols","feat_df"]:
+    if k not in st.session_state:
+        st.session_state[k] = None
 
-st.divider()
+if "raw_files" not in st.session_state:
+    st.session_state["raw_files"] = {}
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — TSFRESH
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="section-header" style="border-color:#818cf8">
-  ⚗️ TSFresh Feature Extraction
-  <span class="steps-badge">Steps 10–12</span>
-</div>""", unsafe_allow_html=True)
-
-st.info("ℹ️ TSFresh extracts statistical features from minute-level heart rate time series. Each row = one user, each column = one statistical feature.")
-
-if st.button("⚗️ Run TSFresh Feature Extraction", disabled=not st.session_state.files_loaded, type="primary"):
-    with st.spinner("Extracting features…"):
-        import time; time.sleep(1.5)
-    st.session_state.tsfresh_done = True
-    st.rerun()
-
-if st.session_state.tsfresh_done:
-    st.success("✅ TSFresh complete — 1 user × 10 features extracted")
-
-    st.markdown('<div class="step-label">◆ Step 10 · TSFresh Input Stats</div>', unsafe_allow_html=True)
-    tc = st.columns(3)
-    with tc[0]: st.metric("USERS", "1")
-    with tc[1]: st.metric("MINUTE ROWS", "1,510")
-    with tc[2]: st.metric("FEATURES EXTRACTED", "10")
-
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 12 · Feature Matrix Heatmap</div>', unsafe_allow_html=True)
-    st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 15 · TSFresh Heatmap</div>', unsafe_allow_html=True)
-
-    try:
-        import matplotlib.pyplot as plt
-        features = ["value__sum_values","value__median","value__mean","value__length",
-                    "value__standard_deviation","value__variance","value__root_mean_square",
-                    "value__abs_energy","value__absolute_maximum","value__minimum"]
-        user_ids = ["2022484408.0"]
-        data = np.zeros((1, 10))
-        fig, ax = plt.subplots(figsize=(13, 2.8))
-        fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-        im = ax.imshow(data, cmap=plt.cm.RdBu_r, aspect="auto", vmin=-0.15, vmax=0.15)
-        cbar = fig.colorbar(im, ax=ax, fraction=0.015, pad=0.02)
-        cbar.ax.yaxis.set_tick_params(color="#94a3b8")
-        plt.setp(cbar.ax.yaxis.get_ticklabels(), color="#94a3b8", fontsize=8, fontfamily="monospace")
-        cbar.outline.set_edgecolor("#1e2a3d"); cbar.ax.set_facecolor("#111827")
-        for j in range(10):
-            ax.text(j, 0, "0.00", ha="center", va="center", color="#94a3b8", fontsize=9, fontfamily="monospace")
-        ax.set_xticks(range(10))
-        ax.set_xticklabels(features, rotation=45, ha="right", color="#94a3b8", fontsize=8, fontfamily="monospace")
-        ax.set_xlabel("Extracted Statistical Features", color="#94a3b8", fontsize=9, labelpad=8)
-        ax.set_yticks([0]); ax.set_yticklabels(user_ids, color="#94a3b8", fontsize=8, fontfamily="monospace")
-        ax.set_ylabel("User ID", color="#94a3b8", fontsize=9, labelpad=8)
-        ax.set_title("TSFresh Feature Matrix — Real Fitbit Heart Rate Data\n(Normalized 0-1 per feature)", color="#e2e8f0", fontsize=11, pad=12)
-        ax.set_xticks(np.arange(-0.5, 10, 1), minor=True)
-        ax.set_yticks([-0.5, 0.5], minor=True)
-        ax.grid(which="minor", color="#1e2a3d", linewidth=1.2)
-        ax.tick_params(which="minor", bottom=False, left=False)
-        for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-        plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-    except Exception as e:
-        st.caption(f"Heatmap error: {e}")
-
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR
+# ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
     st.markdown("""
-    <div style="background:#161d2e;border:1px solid #1e2a3d;border-radius:10px;padding:1.2rem 1.5rem;margin-top:0.5rem;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;letter-spacing:0.12em;color:#64748b;text-transform:uppercase;margin-bottom:0.9rem;">Feature Interpretation Guide</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 2rem;">
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">sum_values</span><span style="color:#64748b;"> — Total HR over time (activity volume)</span></div>
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">median</span><span style="color:#64748b;"> / </span><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">mean</span><span style="color:#64748b;"> — Central tendency of HR</span></div>
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">standard_deviation</span><span style="color:#64748b;"> — HR variability (fitness indicator)</span></div>
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">variance</span><span style="color:#64748b;"> — Square of std dev</span></div>
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">root_mean_square</span><span style="color:#64748b;"> — Energy-weighted average HR</span></div>
-        <div style="font-size:0.83rem;"><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">maximum</span><span style="color:#64748b;"> / </span><span style="color:#60a5fa;font-family:'JetBrains Mono',monospace;">minimum</span><span style="color:#64748b;"> — Peak and resting HR</span></div>
+    <div style='display:flex;align-items:center;gap:10px;padding:4px 0 6px 0'>
+      <span style='font-size:1.4rem'>🩺</span>
+      <div>
+        <div style='font-size:1.05rem;font-weight:800;color:#e2eaf4'>FitPulse</div>
+        <div style='font-size:0.7rem;color:#6b7a96'>Fitness ML Analytics Pipeline</div>
       </div>
     </div>""", unsafe_allow_html=True)
 
-st.divider()
+    st.divider()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — PROPHET
-# ═══════════════════════════════════════════════════════════════════════════════
+    page = st.radio(
+        "Navigate",
+        ["📂  Milestone 1 — Data Processing",
+         "🤖  Milestone 2 — Machine Learning"]
+    )
+
+    st.divider()
+
+    if "Milestone 2" in page:
+        # Progress bar — 5 stages so 100% only after Steps/Sleep forecast
+        fl  = st.session_state.files_loaded
+        tf  = st.session_state.tsfresh_done
+        pf  = st.session_state.prophet_done
+        cl  = st.session_state.cluster_done
+        ss  = st.session_state.get("steps_sleep_fig") is not None
+        pct = int(sum([fl, tf, pf, cl, ss]) / 5 * 100)
+
+        st.markdown(f"""
+        <div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;
+                    letter-spacing:1px;font-weight:700'>
+          Pipeline Progress
+          <span style='color:#63d7c4;margin-left:6px'>{pct}%</span>
+        </div>
+        <div class='prog-bar-bg'>
+          <div class='prog-bar-fill' style='width:{pct}%'></div>
+        </div>""", unsafe_allow_html=True)
+
+        def nav(active, icon, label):
+            d = "nav-dot-active"   if active else "nav-dot-inactive"
+            l = "nav-label-active" if active else "nav-label-inactive"
+            st.markdown(
+                f"<div class='nav-item'><div class='{d}'></div>"
+                f"<span>{icon}</span><span class='{l}'>{label}</span></div>",
+                unsafe_allow_html=True
+            )
+
+        nav(fl, "📁", "Data Loading")
+        nav(tf, "⚗️", "TSFresh Features")
+        nav(pf, "📅", "Prophet Forecast")
+        nav(cl, "🔵", "Clustering")
+        nav(ss, "📈", "Steps & Sleep Forecast")
+
+        st.divider()
+
+        st.markdown(
+            "<div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;"
+            "letter-spacing:1px;font-weight:700'>⚙️ ML Controls</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            "<div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;"
+            "letter-spacing:1px;font-weight:700;margin-top:10px'>KMeans Clusters</div>",
+            unsafe_allow_html=True
+        )
+        k_val = st.slider("k", 2, 9, 3, label_visibility="collapsed")
+
+        st.markdown(
+            "<div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;"
+            "letter-spacing:1px;font-weight:700;margin-top:10px'>DBSCAN EPS</div>",
+            unsafe_allow_html=True
+        )
+        eps_val = st.slider("eps", 0.5, 5.0, 2.20, step=0.1, label_visibility="collapsed")
+
+        st.divider()
+        st.markdown("""
+        <div style='font-size:0.72rem;color:#6b7a96;line-height:1.8'>
+          Pipeline Steps:<br>
+          ① TSFresh Features<br>
+          ② Prophet Forecast<br>
+          ③ KMeans Clustering<br>
+          ④ DBSCAN Clustering<br>
+          ⑤ PCA Projection<br>
+          ⑥ t-SNE Visualization
+        </div>""", unsafe_allow_html=True)
+    else:
+        k_val   = 3
+        eps_val = 2.2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div class="section-header" style="border-color:#22c55e">
-  📅 Prophet Trend Forecasting
-  <span class="steps-badge">Steps 13–17</span>
+<div style='padding:1rem 0 0.3rem 0'>
+  <h1 style='margin:0'>🩺 FitPulse <span style='color:#63d7c4'>Analytics</span></h1>
+  <p style='color:#6b7a96;font-size:0.85rem;margin-top:4px'>
+    Fitness ML Pipeline — Data Processing & Machine Learning
+  </p>
 </div>""", unsafe_allow_html=True)
-
-st.info("ℹ️ Prophet fits additive models with weekly seasonality and 80% confidence intervals. 30-day ahead forecasts for Heart Rate, Steps, and Sleep.")
-
-if st.button("📅 Run Prophet Forecasting (Heart Rate + Steps + Sleep)",
-             disabled=not st.session_state.tsfresh_done, type="primary"):
-    with st.spinner("Fitting 3 Prophet models…"):
-        import time; time.sleep(2)
-    st.session_state.prophet_done = True
-    st.rerun()
-
-if st.session_state.prophet_done:
-    st.success("✅ 3 Prophet models fitted — HR, Steps, Sleep · 30-day forecast each")
-    tab1, tab2 = st.tabs(["❤️ Heart Rate Forecast", "👟 Steps & Sleep Forecast"])
-
-    with tab1:
-        st.markdown('<div class="step-label">◆ Step 15 · Heart Rate Forecast</div>', unsafe_allow_html=True)
-        st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 18 · Prophet HR Forecast</div>', unsafe_allow_html=True)
-        try:
-            import matplotlib.pyplot as plt, matplotlib.dates as mdates
-            dates_hist = pd.date_range("2016-01-01","2016-03-12",freq="D")
-            dates_fore = pd.date_range("2016-03-12","2016-04-15",freq="D")
-            np.random.seed(42)
-            hr_hist = 70+np.random.normal(0,3,len(dates_hist))
-            hr_fore = 70+np.cumsum(np.random.normal(0,8,len(dates_fore)))
-            hr_fore = hr_fore-hr_fore.min()+50
-            fig,ax=plt.subplots(figsize=(10,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-            ax.plot(dates_hist,hr_hist,"o",color="#3b82f6",markersize=3,alpha=0.6)
-            ax.plot(dates_fore,hr_fore,color="#93c5fd",linewidth=1.5)
-            ax.fill_between(dates_fore,hr_fore*0.7,hr_fore*1.3,alpha=0.15,color="#3b82f6")
-            ax.axvline(pd.Timestamp("2016-03-12"),color="#f59e0b",linestyle="--",linewidth=1,alpha=0.7)
-            ax.set_title("Heart Rate — Prophet Trend Forecast (Real Fitbit Data)",color="#e2e8f0",fontsize=11)
-            ax.tick_params(colors="#64748b")
-            for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-            ax.set_xlabel("Date",color="#64748b"); ax.set_ylabel("Heart Rate (bpm)",color="#64748b")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
-            plt.xticks(rotation=30,ha="right"); plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-        except Exception as e: st.caption(f"Chart: {e}")
-
-    with tab2:
-        st.markdown('<div class="step-label">◆ Step 17 · Steps & Sleep Forecast</div>', unsafe_allow_html=True)
-        st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 20 · Steps & Sleep Prophet</div>', unsafe_allow_html=True)
-        try:
-            import matplotlib.pyplot as plt
-            dates=pd.date_range("2016-03-12","2016-05-15",freq="D"); split=pd.Timestamp("2016-04-12")
-            np.random.seed(7)
-            sa=4000+np.cumsum(np.random.normal(100,500,len(dates)))
-            sl=200+50*np.sin(np.linspace(0,4*np.pi,len(dates)))+np.random.normal(0,30,len(dates))
-            fig,axes=plt.subplots(2,1,figsize=(10,7)); fig.patch.set_facecolor("#111827")
-            for ax in axes: ax.set_facecolor("#111827")
-            axes[0].fill_between(dates,sa*0.7,sa*1.3,alpha=0.25,color="#065f46")
-            axes[0].plot(dates,sa,color="white",linewidth=1.5)
-            axes[0].axvline(split,color="#f59e0b",linestyle="--",linewidth=1,alpha=0.7)
-            axes[0].set_title("Steps — Prophet Trend Forecast",color="#e2e8f0",fontsize=10)
-            axes[0].tick_params(colors="#64748b"); axes[0].set_ylabel("Steps",color="#64748b")
-            for s in axes[0].spines.values(): s.set_edgecolor("#1e2a3d")
-            axes[1].fill_between(dates,sl*0.4,sl*1.6,alpha=0.3,color="#4c1d95")
-            axes[1].plot(dates,sl,color="white",linewidth=1.5)
-            axes[1].axvline(split,color="#f59e0b",linestyle="--",linewidth=1,alpha=0.7)
-            axes[1].set_title("Sleep (minutes) — Prophet Trend Forecast",color="#e2e8f0",fontsize=10)
-            axes[1].tick_params(colors="#64748b"); axes[1].set_ylabel("Sleep (min)",color="#64748b"); axes[1].set_xlabel("Date",color="#64748b")
-            for s in axes[1].spines.values(): s.set_edgecolor("#1e2a3d")
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-        except Exception as e: st.caption(f"Chart: {e}")
-
 st.divider()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — CLUSTERING
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown(f"""
-<div class="section-header" style="border-color:#ec4899">
-  🔵 Clustering — KMeans + DBSCAN + PCA + t-SNE
-  <span class="steps-badge">Steps 18–27</span>
-</div>""", unsafe_allow_html=True)
+# =============================================================================
+# MILESTONE 1 — DATA PROCESSING
+# =============================================================================
+if "Milestone 1" in page:
 
-st.info(f"ℹ️ Using 7 activity features for clustering. KMeans K={k_val}, DBSCAN eps={eps_val:.1f}. Adjust parameters in the sidebar.")
+    st.markdown("## 📂 Upload Dataset")
+    file = st.file_uploader("Upload your fitness CSV", type=["csv"])
 
-if st.button(f"🔵 Run Clustering (K={k_val} · eps={eps_val:.1f})",
-             disabled=not st.session_state.prophet_done, type="primary"):
-    with st.spinner("Running KMeans, DBSCAN, PCA, t-SNE…"):
-        import time; time.sleep(2)
-    st.session_state.cluster_done = True
-    st.rerun()
+    if file:
+        file.seek(0)
+        df = pd.read_csv(file)
+        st.session_state["df"] = df
+        st.session_state["milestone1_loaded"] = True
+        st.success(f"✅ Dataset loaded — **{len(df):,} rows × {len(df.columns)} columns**")
 
-if st.session_state.cluster_done:
-    st.success(f"✅ Clustering complete — 35 users · KMeans K={k_val} · DBSCAN 3 clusters · 1 noise")
+    if st.session_state.get("milestone1_loaded") and st.session_state.get("df") is not None:
+        df = st.session_state["df"]
 
-    mc=st.columns(6)
-    for col,(v,l) in zip(mc,[("35","USERS CLUSTERED"),("3","KMEANS CLUSTERS"),
-                              ("44.7%","PC1 VARIANCE"),("23.1%","PC2 VARIANCE"),
-                              ("3","DBSCAN CLUSTERS"),("1","NOISE POINTS")]):
-        with col: st.metric(l,v)
+        with st.expander("🔎 Raw Data Preview", expanded=True):
+            st.dataframe(df.head(10), use_container_width=True)
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 20 · KMeans Elbow Curve</div>', unsafe_allow_html=True)
-    st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 23 · Elbow Curve</div>', unsafe_allow_html=True)
-    try:
-        import matplotlib.pyplot as plt
-        fig,ax=plt.subplots(figsize=(8,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-        ax.plot(range(1,10),[167,123,100,78,62,50,43,38,33],"-o",color="#93c5fd",linewidth=2,markersize=7,markerfacecolor="#f472b6",markeredgecolor="none")
-        ax.axvline(k_val,color="#f59e0b",linestyle="--",linewidth=1.5,alpha=0.8,label=f"Selected K={k_val}")
-        ax.set_title("KMeans Elbow Curve — Real Fitbit Data",color="#e2e8f0",fontsize=11)
-        ax.set_xlabel("Number of Clusters (K)",color="#64748b"); ax.set_ylabel("Inertia",color="#64748b")
-        ax.tick_params(colors="#64748b")
-        for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-        ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=9)
-        plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-    except Exception as e: st.caption(f"Chart: {e}")
+        st.markdown("## 🔍 Missing Values Analysis")
+        missing       = df.isnull().sum()
+        total_missing = missing.sum()
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 24+25 · KMeans & DBSCAN — PCA Projection</div>', unsafe_allow_html=True)
-    np.random.seed(21); n=35
-    px=np.random.randn(n); py=np.random.randn(n)
-    km=np.random.choice(k_val,n)
-    db=np.where(np.random.rand(n)<0.03,-1,np.random.choice(3,n))
-    cm=["#3b82f6","#ec4899","#22c55e","#f59e0b","#a78bfa","#34d399","#fb923c"]
-    try:
-        import matplotlib.pyplot as plt
-        cp1,cp2=st.columns(2)
-        with cp1:
-            st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 27 · KMeans PCA</div>', unsafe_allow_html=True)
-            fig,ax=plt.subplots(figsize=(5,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-            for c in range(k_val):
-                m=km==c; ax.scatter(px[m],py[m],color=cm[c],s=60,alpha=0.85,label=f"Cluster {c}")
-            ax.set_title(f"KMeans PCA (K={k_val})",color="#e2e8f0",fontsize=10)
-            ax.set_xlabel("PC1 (44.7%)",color="#64748b"); ax.set_ylabel("PC2 (23.1%)",color="#64748b")
-            ax.tick_params(colors="#64748b")
-            for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-            ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=8)
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-        with cp2:
-            st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 28 · DBSCAN PCA</div>', unsafe_allow_html=True)
-            fig,ax=plt.subplots(figsize=(5,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-            for c in np.unique(db):
-                m=db==c
-                if c==-1: ax.scatter(px[m],py[m],marker="x",color="#ef4444",s=80,zorder=5,label="Noise")
-                else: ax.scatter(px[m],py[m],color=cm[c%len(cm)],s=60,alpha=0.85,label=f"Cluster {c}")
-            ax.set_title(f"DBSCAN PCA (eps={eps_val:.1f})",color="#e2e8f0",fontsize=10)
-            ax.set_xlabel("PC1 (44.7%)",color="#64748b"); ax.set_ylabel("PC2 (23.1%)",color="#64748b")
-            ax.tick_params(colors="#64748b")
-            for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-            ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=8)
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-    except Exception as e: st.caption(f"PCA: {e}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Rows",    f"{len(df):,}")
+        c2.metric("Columns",       f"{len(df.columns)}")
+        c3.metric("Missing Cells", f"{total_missing:,}")
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 26 · t-SNE Projection</div>', unsafe_allow_html=True)
-    st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 29 · t-SNE Both Models</div>', unsafe_allow_html=True)
-    np.random.seed(99); tx=np.random.randn(n)*0.4; ty=np.random.randn(n)*0.8-8
-    try:
-        import matplotlib.pyplot as plt
-        ct1,ct2=st.columns(2)
-        with ct1:
-            fig,ax=plt.subplots(figsize=(5,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-            for c in range(k_val):
-                m=km==c; ax.scatter(tx[m],ty[m],color=cm[c],s=60,alpha=0.85,label=f"Cluster {c}")
-            ax.set_title(f"KMeans t-SNE (K={k_val})",color="#e2e8f0",fontsize=10)
-            ax.set_xlabel("t-SNE Dim 1",color="#64748b"); ax.set_ylabel("t-SNE Dim 2",color="#64748b")
-            ax.tick_params(colors="#64748b")
-            for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-            ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=8)
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-        with ct2:
-            fig,ax=plt.subplots(figsize=(5,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-            for c in np.unique(db):
-                m=db==c
-                if c==-1: ax.scatter(tx[m],ty[m],marker="x",color="#ef4444",s=80,zorder=5,label="Noise")
-                else: ax.scatter(tx[m],ty[m],color=cm[c%len(cm)],s=60,alpha=0.85,label=f"Cluster {c}")
-            ax.set_title(f"DBSCAN t-SNE (eps={eps_val:.1f})",color="#e2e8f0",fontsize=10)
-            ax.set_xlabel("t-SNE Dim 1",color="#64748b"); ax.set_ylabel("t-SNE Dim 2",color="#64748b")
-            ax.tick_params(colors="#64748b")
-            for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-            ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=8)
-            plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-    except Exception as e: st.caption(f"t-SNE: {e}")
+        if total_missing > 0:
+            fig, ax = plt.subplots(figsize=(10, 3.5))
+            missing_nz = missing[missing > 0]
+            bars = ax.bar(missing_nz.index, missing_nz.values,
+                          color=PALETTE[0], edgecolor="none")
+            ax.set_title("Missing Values per Column", fontsize=13, pad=12)
+            plt.xticks(rotation=45, ha="right", fontsize=9)
+            for bar in bars:
+                ax.text(bar.get_x() + bar.get_width()/2,
+                        bar.get_height() + 0.3,
+                        str(int(bar.get_height())),
+                        ha="center", va="bottom", fontsize=8, color="#e2eaf4")
+            fig.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+        else:
+            st.success("🎉 No missing values found!")
 
-    st.markdown("")
-    st.markdown('<div class="step-label">◆ Step 27 · Cluster Profiles & Interpretation</div>', unsafe_allow_html=True)
-    st.markdown('<div class="screenshot-badge">📸 Screenshot · Cell 30 · Cluster Profiles</div>', unsafe_allow_html=True)
-    try:
-        import matplotlib.pyplot as plt
-        x=np.arange(3); w=0.2
-        fig,ax=plt.subplots(figsize=(9,4)); fig.patch.set_facecolor("#111827"); ax.set_facecolor("#111827")
-        ax.bar(x-1.5*w,[7666,3238,11034],w,label="TotalSteps",color="#3b82f6")
-        ax.bar(x-0.5*w,[2100,1700,2800], w,label="Calories",  color="#ec4899")
-        ax.bar(x+0.5*w,[758,1194,953],   w,label="Sedentary", color="#f59e0b")
-        ax.bar(x+1.5*w,[13,3,51],        w,label="VeryActive",color="#22c55e")
-        ax.set_xticks(x); ax.set_xticklabels(["Cluster 0","Cluster 1","Cluster 2"],color="#e2e8f0")
-        ax.set_xlabel("Cluster",color="#64748b"); ax.set_ylabel("Mean Value",color="#64748b")
-        ax.set_title("Cluster Profiles — Key Feature Averages",color="#e2e8f0",fontsize=11)
-        ax.tick_params(colors="#64748b")
-        ax.legend(facecolor="#1e2a3d",edgecolor="#2a3050",labelcolor="#e2e8f0",fontsize=9)
-        for s in ax.spines.values(): s.set_edgecolor("#1e2a3d")
-        plt.tight_layout(); st.pyplot(fig); plt.close(fig)
-    except Exception as e: st.caption(f"Bar: {e}")
+        st.markdown("## 🛠 Data Cleaning")
+        if st.button("▶  Run Preprocessing"):
+            with st.spinner("Cleaning data…"):
+                df_clean = df.copy()
+                for col in df_clean.select_dtypes(include=np.number).columns:
+                    df_clean[col] = df_clean[col].interpolate()
+                df_clean = df_clean.fillna("Unknown")
+                st.session_state["clean_df"] = df_clean
+            st.success("✅ Cleaning complete — missing values interpolated / filled.")
 
-    cc0,cc1,cc2=st.columns(3)
-    for col,title,bc,bcls,icon,*det in [
-        (cc0,"Cluster 0","MODERATELY ACTIVE","badge-mod","🚶","Steps: 7,666/day","Sedentary: 758 min","Very Active: 13 min","Users (12): ...0366, 2835, 7796, 3714 +8"),
-        (cc1,"Cluster 1","SEDENTARY","badge-sed","🪑","Steps: 3,238/day","Sedentary: 1194 min","Very Active: 3 min","Users (15): ...0081, 5072, 2279, 7002 +11"),
-        (cc2,"Cluster 2","HIGHLY ACTIVE","badge-high","🏃","Steps: 11,034/day","Sedentary: 953 min","Very Active: 51 min","Users (8): ...0081, 4408, 0313, 8955 +4"),
-    ]:
+    if st.session_state.get("clean_df") is not None:
+        st.markdown("## 📑 Cleaned Dataset")
+        st.dataframe(st.session_state["clean_df"].head(10), use_container_width=True)
+        csv = st.session_state["clean_df"].to_csv(index=False).encode()
+        st.download_button("⬇  Download Clean CSV", csv, "clean_dataset.csv", mime="text/csv")
+
+        st.markdown("## 📊 Exploratory Data Analysis")
+        df_eda   = st.session_state["clean_df"]
+        num_cols = df_eda.select_dtypes(include=np.number).columns.tolist()
+
+        if num_cols:
+            pairs = [num_cols[i:i+2] for i in range(0, len(num_cols), 2)]
+            for pair in pairs:
+                grid = st.columns(len(pair))
+                for ax_col, col in zip(grid, pair):
+                    with ax_col:
+                        fig, ax = plt.subplots(figsize=(5, 3))
+                        sns.histplot(df_eda[col], kde=True, ax=ax,
+                                     color=PALETTE[0], edgecolor="none",
+                                     line_kws={"color": PALETTE[1], "linewidth": 2})
+                        ax.set_title(col, fontsize=11)
+                        ax.set_xlabel("")
+                        fig.tight_layout()
+                        st.pyplot(fig)
+                        plt.close(fig)
+        else:
+            st.info("No numeric columns found for EDA.")
+
+# =============================================================================
+# MILESTONE 2 — MACHINE LEARNING
+# =============================================================================
+if "Milestone 2" in page:
+
+    # ── Required file signatures ──
+    REQUIRED = {
+        "Daily Activity":     ["TotalSteps", "Calories", "VeryActiveMinutes"],
+        "Hourly Steps":       ["StepTotal"],
+        "Hourly Intensities": ["TotalIntensity", "AverageIntensity"],
+        "Minute Sleep":       ["logId", "value", "date"],
+        "Heart Rate":         ["Value", "Time"],
+    }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 1 — UPLOAD
+    # ─────────────────────────────────────────────────────────────────────────
+    step_hdr(1, "Upload Fitbit CSV Files")
+    st.caption("Upload all 5 Fitbit CSV files — auto-detected by column signature.")
+
+    uploaded_files = st.file_uploader(
+        "Upload", type="csv", accept_multiple_files=True,
+        label_visibility="collapsed"
+    )
+    if uploaded_files:
+        for f in uploaded_files:
+            f.seek(0)
+            st.session_state["raw_files"][f.name] = f.read()
+
+    # Auto-detect
+    detected = {}
+    for fname, raw in st.session_state["raw_files"].items():
+        try:
+            cols = set(pd.read_csv(pd.io.common.BytesIO(raw), nrows=3).columns)
+            for name, keys in REQUIRED.items():
+                if all(k in cols for k in keys) and name not in detected:
+                    detected[name] = fname
+        except Exception:
+            pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 2 — DETECTION CARDS
+    # ─────────────────────────────────────────────────────────────────────────
+    step_hdr(2, "File Detection")
+
+    icons_map = {
+        "Daily Activity": "🏃", "Hourly Steps": "👟",
+        "Hourly Intensities": "⚡", "Minute Sleep": "😴", "Heart Rate": "❤️"
+    }
+    c5 = st.columns(5)
+    for col, name in zip(c5, REQUIRED.keys()):
+        found = name in detected
+        color = "#34d399" if found else "#f87171"
         with col:
             st.markdown(f"""
-            <div class="cluster-card">
-              <div style="font-size:1.5rem">{icon}</div>
-              <h4 style="margin:6px 0 4px;font-family:var(--sans)">{title}</h4>
-              <span class="cluster-badge {bcls}">{bc}</span><br/>
-              {''.join(f'<div style="font-size:0.82rem;color:#94a3b8;font-family:var(--mono);margin-top:4px;">{d}</div>' for d in det)}
+            <div style='border:1px solid {color}33;background:rgba(255,255,255,0.03);
+                        padding:16px 10px 12px;border-radius:14px;text-align:center'>
+              <div style='font-size:1.4rem;margin-bottom:6px'>{icons_map[name]}</div>
+              <div style='font-size:0.73rem;font-weight:700;color:#e2eaf4;margin-bottom:6px'>{name}</div>
+              <span class='fp-badge {"fp-badge-ok" if found else "fp-badge-miss"}'>
+                {"Found ✓" if found else "Missing"}
+              </span>
             </div>""", unsafe_allow_html=True)
 
-st.divider()
+    st.write("")
+    dc = len(detected)
+    m1, m2, m3 = st.columns(3)
+    m1.metric(str(dc),                  "DETECTED")
+    m2.metric(str(5 - dc),              "MISSING")
+    m3.metric("✓" if dc == 5 else "⏳", "READY TO LOAD")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SUMMARY
-# ═══════════════════════════════════════════════════════════════════════════════
-if st.session_state.cluster_done:
-    st.markdown("""
-    <div style="background:var(--bg-card);border:1px solid #1a3a2a;border-left:3px solid #22c55e;
-                border-radius:10px;padding:1.2rem 1.5rem;margin-bottom:1rem;">
-      <div style="font-size:1rem;font-weight:600;margin-bottom:0.8rem;">✅ Milestone 2 Summary</div>
-    """, unsafe_allow_html=True)
-    for icon,label,detail in [
-        ("📁","Data Loading","5 CSV files · master DataFrame · time normalization"),
-        ("⚗️","TSFresh","10 features · normalized heatmap"),
-        ("📅","Prophet Forecast","HR + Steps + Sleep · 30-day · 80% CI · weekly seasonality"),
-        ("🔵","KMeans Clustering","K=3 · PCA 2D · t-SNE"),
-        ("🔵","DBSCAN","eps=2.2 · 3 clusters · 1 noise"),
-    ]:
+    if dc == 5:
+        st.success("✅ All 5 required files detected — ready to process!")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 3 — LOAD & PARSE
+    # ─────────────────────────────────────────────────────────────────────────
+    step_hdr(3, "Load & Parse All Files")
+
+    if dc == 5:
+        if st.button("⚡ Load & Parse All Files"):
+            with st.spinner("Parsing and merging datasets…"):
+                try:
+                    def _rd(name):
+                        return pd.read_csv(pd.io.common.BytesIO(
+                            st.session_state["raw_files"][detected[name]]))
+
+                    daily     = _rd("Daily Activity")
+                    steps     = _rd("Hourly Steps")
+                    intensity = _rd("Hourly Intensities")
+                    sleep     = _rd("Minute Sleep")
+                    hr        = _rd("Heart Rate")
+
+                    for df_ in [daily, steps, intensity, sleep, hr]:
+                        df_.columns = [c.strip() for c in df_.columns]
+
+                    st.session_state.daily     = daily
+                    st.session_state.steps     = steps
+                    st.session_state.intensity = intensity
+                    st.session_state.sleep     = sleep
+                    st.session_state.hr        = hr
+
+                    # ── Build master DataFrame ──
+                    id_col   = next(c for c in daily.columns if c.lower() == "id")
+                    date_col = next((c for c in daily.columns if "date" in c.lower()), None)
+
+                    keep = [id_col]
+                    if date_col: keep.append(date_col)
+                    for c in ["TotalSteps","Calories","VeryActiveMinutes","SedentaryMinutes"]:
+                        if c in daily.columns: keep.append(c)
+                    master = daily[keep].copy()
+                    master.rename(columns={id_col: "Id"}, inplace=True)
+                    if date_col: master.rename(columns={date_col: "Date"}, inplace=True)
+
+                    # Merge avg HR per user-date
+                    hr_id = next((c for c in hr.columns if c.lower() == "id"), None)
+                    hr_t  = next((c for c in hr.columns if c.lower() in
+                                  ("time","datetime","timestamp","date","activityminute")), None)
+                    hr_v  = next((c for c in hr.columns if c.lower() == "value"), None)
+                    if hr_id and hr_t and hr_v and "Date" in master.columns:
+                        hr["_d"] = pd.to_datetime(hr[hr_t], errors="coerce").dt.date.astype(str)
+                        hr_agg   = hr.groupby([hr_id, "_d"])[hr_v].mean().reset_index()
+                        hr_agg.columns = ["Id","Date","AvgHR"]
+                        master = master.merge(hr_agg, on=["Id","Date"], how="left")
+
+                    # Merge total sleep minutes
+                    sl_id = next((c for c in sleep.columns if c.lower() == "id"), None)
+                    sl_d  = next((c for c in sleep.columns if "date" in c.lower()), None)
+                    if sl_id and sl_d and "Date" in master.columns:
+                        sleep["_d"] = pd.to_datetime(sleep[sl_d], errors="coerce").dt.date.astype(str)
+                        sl_agg = sleep.groupby([sl_id, "_d"]).size().reset_index(name="TotalSleepMinutes")
+                        sl_agg.columns = ["Id","Date","TotalSleepMinutes"]
+                        master = master.merge(sl_agg, on=["Id","Date"], how="left")
+
+                    st.session_state.master_df    = master
+                    st.session_state.files_loaded = True
+                    st.success("✅ All 5 files loaded and master DataFrame built")
+
+                except Exception as e:
+                    st.error(f"❌ Load error: {e}")
+
+    if st.session_state.files_loaded:
+        st.success("✅ All 5 files loaded and master DataFrame built")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 4 — NULL VALUE CHECK
+    # ─────────────────────────────────────────────────────────────────────────
+    if st.session_state.files_loaded:
+        step_hdr(4, "Null Value Check")
+
+        dsets = {
+            "dailyActivity":     st.session_state.daily,
+            "hourlySteps":       st.session_state.steps,
+            "hourlyIntensities": st.session_state.intensity,
+            "minuteSleep":       st.session_state.sleep,
+            "heartrate":         st.session_state.hr,
+        }
+        nc = st.columns(5)
+        for col, (name, df_) in zip(nc, dsets.items()):
+            nulls = int(df_.isnull().sum().sum())
+            rows  = len(df_)
+            val   = (f"<div class='null-val-bad'>{nulls:,}</div>"
+                     if nulls > 0 else "<div class='null-val-ok'>⊙</div>")
+            with col:
+                st.markdown(f"""
+                <div class='null-card'>
+                  <div class='null-card-name'>{name}</div>
+                  {val}
+                  <div class='null-rows'>nulls · {rows:,} rows</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 7 — TIME NORMALISATION LOG
+        # ─────────────────────────────────────────────────────────────────────
+        step_hdr(7, "Time Normalization Log")
+
+        hr2  = st.session_state.hr
+        hr_t = next((c for c in hr2.columns if c.lower() in
+                     ("time","datetime","timestamp","date","activityminute")), None)
+        hr_v = next((c for c in hr2.columns if c.lower() == "value"), None)
+
+        rows_before     = len(hr2)
+        rows_after      = rows_before
+        date_min        = "N/A"
+        date_max        = "N/A"
+        date_range_days = "?"
+
+        if hr_t:
+            try:
+                _dt          = pd.to_datetime(hr2[hr_t], errors="coerce")
+                _dt_clean    = _dt.dropna()
+                rows_after       = int(_dt_clean.dt.floor("T").nunique())
+                date_min         = _dt_clean.dt.date.min()
+                date_max         = _dt_clean.dt.date.max()
+                date_range_days  = (date_max - date_min).days + 1
+            except Exception:
+                pass
+
+        sl2        = st.session_state.sleep
+        sleep_rows = len(sl2)
+
+        st2  = st.session_state.steps
+        st_t = next((c for c in st2.columns if c.lower() in
+                     ("activityhour","datetime","time","date")), None)
+        hourly_pct = "100.0"
+        if st_t:
+            try:
+                _dts   = pd.to_datetime(st2[st_t], errors="coerce").dropna().sort_values()
+                diffs  = _dts.diff().dt.total_seconds() / 3600
+                hourly_pct = f"{(diffs.dropna() == 1.0).mean() * 100:.1f}"
+            except Exception:
+                pass
+
         st.markdown(f"""
-        <div class="summary-row">
-          <span>✅</span><span style="font-size:0.85rem">{icon} {label}</span>
-          <span class="summary-detail">{detail}</span>
+        <div class='log-box'>
+          <span style='color:#34d399'>✅ HR resampled</span>
+          <span style='color:#6b7a96'> seconds → 1-minute intervals</span><br>
+          &nbsp;&nbsp;&nbsp;Rows before : <span style='color:#e2eaf4;font-weight:700'>{rows_before:,}</span>
+          &nbsp;&nbsp;|&nbsp;&nbsp;Rows after : <span style='color:#63d7c4;font-weight:700'>{rows_after:,}</span><br>
+          <span style='color:#34d399'>✅ Date range</span>
+          <span style='color:#63d7c4'> {date_min} → {date_max}</span>
+          <span style='color:#6b7a96'> ({date_range_days} days)</span><br>
+          <span style='color:#34d399'>✅ Hourly frequency</span>
+          <span style='color:#6b7a96'> 1.0h median &nbsp;|&nbsp;</span>
+          <span style='color:#e2eaf4'>{hourly_pct}% exact 1-hour</span><br>
+          <span style='color:#34d399'>✅ Sleep stages</span>
+          <span style='color:#6b7a96'> 1=Light · 2=Deep · 3=REM &nbsp;|&nbsp;</span>
+          <span style='color:#e2eaf4'>{sleep_rows:,} records</span><br>
+          <span style='color:#fbbf24'>⚠ Timezone</span>
+          <span style='color:#6b7a96'> Local time — UTC normalization not applicable</span>
         </div>""", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("#### 📸 Screenshots Required for Submission")
-    sc=st.columns(2)
-    for i,(cell,desc) in enumerate([
-        ("Cell 15","TSFresh Feature Matrix Heatmap"),("Cell 18","Prophet HR Forecast with CI"),
-        ("Cell 20","Steps & Sleep Prophet"),("Cell 27","KMeans PCA Scatter"),
-        ("Cell 28","DBSCAN PCA Scatter"),("Cell 29","t-SNE Both Models"),("Cell 30","Cluster Profiles Bar Chart"),
-    ]):
-        with sc[i%2]:
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 5 — DATASET OVERVIEW
+        # ─────────────────────────────────────────────────────────────────────
+        step_hdr(5, "Dataset Overview")
+
+        daily_  = st.session_state.daily
+        d_id    = next((c for c in daily_.columns if c.lower() == "id"), daily_.columns[0])
+        hr_id_c = next((c for c in hr2.columns  if c.lower() == "id"), None)
+        sl_id_c = next((c for c in sl2.columns  if c.lower() == "id"), None)
+
+        daily_users = daily_[d_id].nunique()
+        hr_users    = hr2[hr_id_c].nunique()  if hr_id_c  else 0
+        sleep_users = sl2[sl_id_c].nunique()  if sl_id_c  else 0
+        master_rows = len(st.session_state.master_df) if st.session_state.master_df is not None else 0
+
+        o1,o2,o3,o4,o5 = st.columns(5)
+        o1.metric(str(daily_users),     "DAILY USERS")
+        o2.metric(str(hr_users),        "HR USERS")
+        o3.metric(str(sleep_users),     "SLEEP USERS")
+        o4.metric(f"{rows_after:,}",    "HR MINUTE ROWS")
+        o5.metric(f"{master_rows:,}",   "MASTER ROWS")
+
+        # ─────────────────────────────────────────────────────────────────────
+        # STEP 9 — CLEANED DATASET PREVIEW
+        # ─────────────────────────────────────────────────────────────────────
+        step_hdr(9, "Cleaned Dataset Preview")
+
+        if st.session_state.master_df is not None:
+            st.dataframe(st.session_state.master_df.head(30), use_container_width=True)
+            csv_bytes = st.session_state.master_df.to_csv(index=False).encode()
+            st.download_button("⬇  Download Master CSV", csv_bytes,
+                               "fitpulse_master.csv", mime="text/csv")
+
+    # =========================================================================
+    # ML-1 — TSFresh
+    # =========================================================================
+    if st.session_state.files_loaded:
+        st.divider()
+        step_hdr("ML‑1", "TSFresh Feature Extraction")
+        st.caption("Extracts statistical features from Heart Rate time-series per user.")
+
+        if st.button("▶  Run TSFresh"):
+            with st.spinner("Extracting features…"):
+                try:
+                    hr3 = st.session_state.hr.copy()
+                    hr3.columns = [c.strip() for c in hr3.columns]
+
+                    id_col = next(c for c in hr3.columns if c.lower() == "id")
+                    t_col  = next(c for c in hr3.columns if c.lower() in
+                                  ("time","datetime","timestamp","date","activityminute"))
+                    v_col  = next(c for c in hr3.columns if c.lower() == "value")
+
+                    ts_hr = hr3[[id_col, t_col, v_col]].rename(
+                        columns={id_col:"id", t_col:"time", v_col:"value"})
+                    ts_hr["time"]  = pd.to_datetime(ts_hr["time"], errors="coerce")
+                    ts_hr["value"] = pd.to_numeric(ts_hr["value"],  errors="coerce")
+                    ts_hr.dropna(inplace=True)
+
+                    features = extract_features(
+                        ts_hr,
+                        column_id="id",
+                        column_sort="time",
+                        column_value="value",
+                        default_fc_parameters=MinimalFCParameters()
+                    )
+                    features.dropna(axis=1, how="all", inplace=True)
+
+                    scaler = MinMaxScaler()
+                    norm   = scaler.fit_transform(features)
+
+                    fig, ax = plt.subplots(figsize=(11, 4))
+                    sns.heatmap(norm, cmap="YlOrRd", ax=ax, linewidths=0,
+                                cbar_kws={"shrink": 0.7})
+                    ax.set_title("TSFresh Feature Heatmap (normalised)", fontsize=12)
+                    ax.set_xlabel("Feature Index")
+                    ax.set_ylabel("User ID")
+                    fig.tight_layout()
+
+                    st.session_state["tsfresh_fig"] = fig_to_bytes(fig)
+                    st.session_state.features       = features
+                    st.session_state.tsfresh_done   = True
+                    st.success(f"✅ Extracted **{features.shape[1]}** features "
+                               f"for **{features.shape[0]}** users.")
+                except Exception as e:
+                    st.error(f"❌ TSFresh error: {e}")
+
+        # Always show persisted figure
+        if st.session_state["tsfresh_fig"] is not None:
+            st.image(st.session_state["tsfresh_fig"], use_container_width=True)
+
+    # =========================================================================
+    # ML-2 — Prophet  (FAST: daily aggregation, MAP estimation, ≤60 rows)
+    # =========================================================================
+    if st.session_state.tsfresh_done:
+        st.divider()
+        step_hdr("ML‑2", "Prophet Forecast")
+        st.caption("30-day heart rate forecast using Meta's Prophet model.")
+
+        if st.button("▶  Run Prophet"):
+            with st.spinner("Fitting Prophet model… (usually < 10 seconds)"):
+                try:
+                    hr4 = st.session_state.hr.copy()
+                    hr4.columns = [c.strip() for c in hr4.columns]
+
+                    t_col = next((c for c in hr4.columns if c.lower() in
+                                  ("time","datetime","timestamp","date","activityminute")), None)
+                    v_col = next((c for c in hr4.columns if c.lower() == "value"), None)
+
+                    if not t_col or not v_col:
+                        st.error("Could not find Date/Value columns in Heart Rate dataset.")
+                    else:
+                        # ── KEY FIX: aggregate to DAILY averages first ──
+                        hr4["_dt"]   = pd.to_datetime(hr4[t_col], errors="coerce")
+                        hr4["_date"] = hr4["_dt"].dt.date
+                        agg = (hr4.groupby("_date")[v_col]
+                                  .mean()
+                                  .reset_index())
+                        agg.columns = ["ds", "y"]
+                        agg["ds"] = pd.to_datetime(agg["ds"])
+                        agg["y"]  = pd.to_numeric(agg["y"], errors="coerce")
+                        agg.dropna(inplace=True)
+                        agg.sort_values("ds", inplace=True)
+
+                        # Keep last 60 days max — more than enough for Prophet
+                        agg = agg.tail(60).reset_index(drop=True)
+
+                        # ── MAP estimation (mcmc_samples=0) — 10x faster ──
+                        model = Prophet(
+                            interval_width=0.90,
+                            daily_seasonality=False,
+                            weekly_seasonality=True,
+                            mcmc_samples=0          # MAP, not full MCMC
+                        )
+                        model.fit(agg)
+                        future   = model.make_future_dataframe(periods=30)
+                        forecast = model.predict(future)
+
+                        fig, ax = plt.subplots(figsize=(11, 4))
+                        ax.scatter(agg["ds"], agg["y"],
+                                   color=PALETTE[0], s=18, alpha=0.8,
+                                   zorder=3, label="Actual HR")
+                        ax.plot(forecast["ds"], forecast["yhat"],
+                                color=PALETTE[1], linewidth=2, label="Forecast")
+                        ax.fill_between(forecast["ds"],
+                                        forecast["yhat_lower"],
+                                        forecast["yhat_upper"],
+                                        alpha=0.18, color=PALETTE[1], label="90% CI")
+                        ax.axvline(agg["ds"].max(), linestyle="--",
+                                   color=PALETTE[3], alpha=0.6, linewidth=1)
+                        ax.set_title("Heart Rate — 30-Day Prophet Forecast", fontsize=12)
+                        ax.set_xlabel("Date")
+                        ax.set_ylabel("Avg BPM")
+                        ax.legend(fontsize=9)
+                        fig.tight_layout()
+
+                        st.session_state["prophet_fig"] = fig_to_bytes(fig)
+                        st.session_state.prophet_done   = True
+                        st.success("✅ Prophet forecast complete — 30 days ahead.")
+
+                except Exception as e:
+                    st.error(f"❌ Prophet error: {e}")
+
+        # Always show persisted figure
+        if st.session_state["prophet_fig"] is not None:
+            st.image(st.session_state["prophet_fig"], use_container_width=True)
+
+    # =========================================================================
+    # ML-3 — Clustering (KMeans · DBSCAN · PCA · t-SNE)
+    # =========================================================================
+    if st.session_state.prophet_done:
+        st.divider()
+        step_hdr("ML‑3", "Clustering & Dimensionality Reduction")
+        st.caption(
+            f"KMeans (k={k_val}), DBSCAN (eps={eps_val}), "
+            f"PCA & t-SNE on Daily Activity features."
+        )
+
+        if st.button("▶  Run Clustering Pipeline"):
+            with st.spinner("Running clustering…"):
+                try:
+                    daily2 = st.session_state.daily.copy()
+                    daily2.columns = [c.strip() for c in daily2.columns]
+
+                    cluster_cols = ["TotalSteps","Calories","VeryActiveMinutes",
+                                    "FairlyActiveMinutes","LightlyActiveMinutes",
+                                    "SedentaryMinutes"]
+                    available = [c for c in cluster_cols if c in daily2.columns]
+                    id_col2   = next((c for c in daily2.columns if c.lower() == "id"),
+                                     daily2.columns[0])
+                    feat_df   = daily2.groupby(id_col2)[available].mean().dropna()
+
+                    scaler2 = StandardScaler()
+                    X       = scaler2.fit_transform(feat_df)
+
+                    # PCA
+                    pca   = PCA(n_components=2)
+                    X_pca = pca.fit_transform(X)
+
+                    # KMeans
+                    kmeans    = KMeans(n_clusters=k_val, n_init=10, random_state=42)
+                    km_labels = kmeans.fit_predict(X)
+
+                    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
+
+                    # — KMeans PCA —
+                    for c in np.unique(km_labels):
+                        m = km_labels == c
+                        axes[0].scatter(X_pca[m,0], X_pca[m,1],
+                                        color=PALETTE[c % len(PALETTE)],
+                                        s=60, alpha=0.85, edgecolors="none",
+                                        label=f"Cluster {c}")
+                    axes[0].set_title(f"KMeans (k={k_val}) — PCA", fontsize=11)
+                    axes[0].legend(fontsize=8)
+                    axes[0].set_xlabel("PC 1"); axes[0].set_ylabel("PC 2")
+
+                    # — DBSCAN —
+                    db        = DBSCAN(eps=eps_val, min_samples=2)
+                    db_labels = db.fit_predict(X)
+                    for i, c in enumerate(np.unique(db_labels)):
+                        m     = db_labels == c
+                        label = "Noise" if c == -1 else f"Cluster {c}"
+                        color = "#6b7a96" if c == -1 else PALETTE[i % len(PALETTE)]
+                        axes[1].scatter(X_pca[m,0], X_pca[m,1],
+                                        color=color, s=60, alpha=0.85,
+                                        edgecolors="none", label=label)
+                    n_noise = (db_labels == -1).sum()
+                    axes[1].set_title(
+                        f"DBSCAN (eps={eps_val}) — "
+                        f"{len(np.unique(db_labels))-1} clusters, {n_noise} noise",
+                        fontsize=11)
+                    axes[1].legend(fontsize=8)
+                    axes[1].set_xlabel("PC 1"); axes[1].set_ylabel("PC 2")
+
+                    # — t-SNE —
+                    perp   = min(30, max(5, len(X) - 1))
+                    tsne   = TSNE(n_components=2, perplexity=perp,
+                                  random_state=42, max_iter=1000)
+                    X_tsne = tsne.fit_transform(X)
+                    for c in np.unique(km_labels):
+                        m = km_labels == c
+                        axes[2].scatter(X_tsne[m,0], X_tsne[m,1],
+                                        color=PALETTE[c % len(PALETTE)],
+                                        s=60, alpha=0.85, edgecolors="none",
+                                        label=f"Cluster {c}")
+                    axes[2].set_title("t-SNE (KMeans labels)", fontsize=11)
+                    axes[2].legend(fontsize=8)
+                    axes[2].set_xlabel("Dim 1"); axes[2].set_ylabel("Dim 2")
+
+                    for ax in axes:
+                        ax.spines[["top","right","left","bottom"]].set_visible(False)
+
+                    fig.suptitle("Clustering Pipeline", fontsize=13, y=1.02,
+                                 color="#63d7c4", fontweight="bold")
+                    fig.tight_layout()
+
+                    st.session_state["cluster_fig"] = fig_to_bytes(fig)
+
+                    feat_df["Cluster"] = km_labels
+                    st.session_state["cluster_summary"] = (
+                        feat_df.groupby("Cluster")[available].mean().round(1)
+                    )
+                    # Store extra metadata for post-cluster sections
+                    st.session_state["X_scaled"]       = X
+                    st.session_state["km_labels"]      = km_labels
+                    st.session_state["db_labels"]      = db_labels
+                    st.session_state["k_val_used"]     = k_val
+                    st.session_state["available_cols"] = available
+                    st.session_state["feat_df"]        = feat_df.copy()
+                    st.session_state.cluster_done = True
+                    st.success("🎉 ML Pipeline completed successfully!")
+
+                except Exception as e:
+                    st.error(f"❌ Clustering error: {e}")
+
+        # Always show persisted figure
+        if st.session_state["cluster_fig"] is not None:
+            st.image(st.session_state["cluster_fig"], use_container_width=True)
+
+        # Always show cluster summary table
+        if st.session_state.get("cluster_summary") is not None:
+            step_hdr("ML‑4", "Cluster Profiles")
+            st.dataframe(st.session_state["cluster_summary"], use_container_width=True)
+
+    # =========================================================================
+    # ML-6 — CLUSTER PROFILES BAR CHART + INTERPRETATION
+    # =========================================================================
+    if st.session_state.cluster_done:
+        st.divider()
+        step_hdr("ML‑6", "Cluster Profiles — Bar Chart & Interpretation")
+
+        _summary  = st.session_state.get("cluster_summary")
+        _k_used   = st.session_state.get("k_val_used", k_val)
+        _feat_df  = st.session_state.get("feat_df")
+        _km_labels = st.session_state.get("km_labels")
+        _avail    = st.session_state.get("available_cols", [])
+
+        if _summary is not None and _feat_df is not None:
+            # Dataframe display
+            st.dataframe(_summary, use_container_width=True)
+
+            # Bar chart
+            plot_cols = [c for c in
+                         ["TotalSteps","Calories","VeryActiveMinutes",
+                          "SedentaryMinutes","TotalSleepMinutes"]
+                         if c in _summary.columns]
+
+            if "cluster_bar_fig" not in st.session_state:
+                st.session_state["cluster_bar_fig"] = None
+
+            fig, ax = plt.subplots(figsize=(13, 5))
+            _summary[plot_cols].plot(
+                kind="bar", ax=ax,
+                color=PALETTE[:len(plot_cols)],
+                edgecolor="#0d1526", width=0.7
+            )
+            ax.set_title(
+                "Cluster Profiles — Key Feature Averages (Real Fitbit Data)",
+                fontsize=13)
+            ax.set_xlabel("Cluster")
+            ax.set_ylabel("Mean Value")
+            ax.set_xticklabels(
+                [f"Cluster {i}" for i in range(len(_summary))], rotation=0)
+            ax.legend(bbox_to_anchor=(1.02, 1), title="Feature",
+                      fontsize=8, title_fontsize=8)
+            ax.spines[["top","right"]].set_visible(False)
+            fig.tight_layout()
+            st.session_state["cluster_bar_fig"] = fig_to_bytes(fig)
+
+            st.image(st.session_state["cluster_bar_fig"], use_container_width=True)
+
+            # Interpretation
+            st.markdown("### 📊 Cluster Interpretation")
+            interp_cols = st.columns(min(_k_used, 4))
+            for i, col in enumerate(interp_cols):
+                if i not in _summary.index:
+                    continue
+                row    = _summary.loc[i]
+                steps  = row.get("TotalSteps", 0)
+                sed    = row.get("SedentaryMinutes", 0)
+                active = row.get("VeryActiveMinutes", 0)
+
+                if steps > 10000:
+                    profile_icon  = "🏃"
+                    profile_label = "HIGHLY ACTIVE"
+                    profile_color = "#34d399"
+                elif steps > 5000:
+                    profile_icon  = "🚶"
+                    profile_label = "MODERATELY ACTIVE"
+                    profile_color = "#fbbf24"
+                else:
+                    profile_icon  = "🛋️"
+                    profile_label = "SEDENTARY"
+                    profile_color = "#f87171"
+
+                with col:
+                    st.markdown(f"""
+                    <div class='null-card' style='text-align:center;padding:18px 12px'>
+                      <div style='font-size:1.8rem'>{profile_icon}</div>
+                      <div style='color:{profile_color};font-weight:700;
+                                  font-size:0.78rem;margin:6px 0 10px'>
+                        Cluster {i} · {profile_label}
+                      </div>
+                      <div style='font-size:0.75rem;color:#6b7a96;line-height:1.9;
+                                  font-family:"JetBrains Mono",monospace;text-align:left'>
+                        Avg Steps &nbsp;&nbsp;&nbsp;: <span style='color:#e2eaf4'>{steps:,.0f}</span><br>
+                        Sedentary &nbsp;&nbsp;: <span style='color:#e2eaf4'>{sed:.0f} min</span><br>
+                        Very Active : <span style='color:#e2eaf4'>{active:.0f} min</span>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+
+    # =========================================================================
+    # ML-7 — ELBOW CURVE
+    # =========================================================================
+    if st.session_state.cluster_done:
+        st.divider()
+        step_hdr("ML‑7", "KMeans Elbow Curve")
+        st.caption("Inertia vs K — use the elbow point to choose optimal clusters.")
+
+        _X = st.session_state.get("X_scaled")
+        if _X is not None:
+            if st.button("▶  Run Elbow Curve"):
+                with st.spinner("Computing inertia for K = 2…9…"):
+                    try:
+                        inertias = []
+                        K_range  = range(2, 10)
+                        for k in K_range:
+                            km = KMeans(n_clusters=k, random_state=42, n_init=10)
+                            km.fit(_X)
+                            inertias.append(km.inertia_)
+
+                        fig, ax = plt.subplots(figsize=(9, 4))
+                        ax.plot(list(K_range), inertias, "o-",
+                                color="#63d7c4", linewidth=2.5, markersize=9,
+                                markerfacecolor="#f97316")
+                        ax.set_title("KMeans Elbow Curve — Real Fitbit Data", fontsize=13)
+                        ax.set_xlabel("Number of Clusters (K)")
+                        ax.set_ylabel("Inertia")
+                        ax.set_xticks(list(K_range))
+                        ax.spines[["top","right"]].set_visible(False)
+                        fig.tight_layout()
+                        st.session_state["elbow_fig"] = fig_to_bytes(fig)
+                        st.success("✅ Elbow curve complete — screenshot this!")
+                    except Exception as e:
+                        st.error(f"❌ Elbow error: {e}")
+
+            if st.session_state.get("elbow_fig") is not None:
+                st.image(st.session_state["elbow_fig"], use_container_width=True)
+
+    # =========================================================================
+    # ML-8 — STEPS & SLEEP PROPHET FORECASTS
+    # =========================================================================
+    if st.session_state.cluster_done:
+        st.divider()
+        step_hdr("ML‑8", "Steps & Sleep Prophet Forecasts")
+        st.caption("30-day forecast for daily steps and sleep minutes (80% CI).")
+
+        if st.button("▶  Run Steps & Sleep Forecast"):
+            with st.spinner("Fitting Prophet for Steps and Sleep… (usually < 15 seconds)"):
+                try:
+                    daily3 = st.session_state.daily.copy()
+                    sleep3 = st.session_state.sleep.copy()
+                    daily3.columns = [c.strip() for c in daily3.columns]
+                    sleep3.columns = [c.strip() for c in sleep3.columns]
+
+                    # Steps — from daily activity
+                    d_date = next((c for c in daily3.columns if "date" in c.lower()), None)
+
+                    # Sleep — aggregate from raw minute-sleep file directly
+                    sl_id  = next((c for c in sleep3.columns if c.lower() == "id"), None)
+                    sl_d   = next((c for c in sleep3.columns if "date" in c.lower()), None)
+                    sl_v   = next((c for c in sleep3.columns if c.lower() == "value"), None)
+
+                    configs = []
+                    if d_date and "TotalSteps" in daily3.columns:
+                        configs.append(("TotalSteps", d_date, daily3, "#63d7c4", "Steps"))
+
+                    # Build sleep daily totals from raw sleep file
+                    if sl_d and sl_v:
+                        sleep3["_dt"]    = pd.to_datetime(sleep3[sl_d], errors="coerce")
+                        sleep3["_date"]  = sleep3["_dt"].dt.date.astype(str)
+                        sleep3[sl_v]     = pd.to_numeric(sleep3[sl_v], errors="coerce")
+                        # Count minutes per day (each row = 1 minute of sleep)
+                        sl_daily = (sleep3.groupby("_date")
+                                          .size()
+                                          .reset_index(name="SleepMinutes"))
+                        sl_daily.columns = ["_date", "SleepMinutes"]
+                        configs.append(("SleepMinutes", "_date", sl_daily, "#818cf8", "Sleep (minutes)"))
+
+                    if not configs:
+                        st.warning("⚠ Could not find Steps or Sleep columns.")
+                    else:
+                        fig, axes = plt.subplots(len(configs), 1,
+                                                 figsize=(14, 5 * len(configs)))
+                        if len(configs) == 1:
+                            axes = [axes]
+
+                        for ax, (metric, date_col, df_src, color, label) in zip(axes, configs):
+                            agg = (df_src.groupby(date_col)[metric]
+                                         .mean().reset_index())
+                            agg.columns = ["ds", "y"]
+                            agg["ds"] = pd.to_datetime(agg["ds"], errors="coerce")
+                            agg["y"]  = pd.to_numeric(agg["y"], errors="coerce")
+                            agg = agg.dropna().sort_values("ds").tail(60)
+
+                            # Guard: need at least 2 rows for Prophet
+                            if len(agg) < 2:
+                                ax.text(0.5, 0.5, f"Not enough data for {label} forecast",
+                                        ha="center", va="center", transform=ax.transAxes,
+                                        color="#f87171", fontsize=11)
+                                ax.set_title(f"{label} — Insufficient Data", fontsize=13)
+                                continue
+
+                            m = Prophet(
+                                weekly_seasonality=True,
+                                yearly_seasonality=False,
+                                daily_seasonality=False,
+                                interval_width=0.80,
+                                changepoint_prior_scale=0.1,
+                                mcmc_samples=0
+                            )
+                            m.fit(agg)
+                            future   = m.make_future_dataframe(periods=30)
+                            forecast = m.predict(future)
+
+                            ax.scatter(agg["ds"], agg["y"],
+                                       color=color, s=20, alpha=0.75,
+                                       label=f"Actual {label}", zorder=3)
+                            ax.plot(forecast["ds"], forecast["yhat"],
+                                    color="#e2eaf4", linewidth=2, label="Trend")
+                            ax.fill_between(forecast["ds"],
+                                            forecast["yhat_lower"],
+                                            forecast["yhat_upper"],
+                                            alpha=0.22, color=color, label="80% CI")
+                            ax.axvline(agg["ds"].max(), color="#fbbf24",
+                                       linestyle="--", linewidth=1.5,
+                                       label="Forecast Start")
+                            ax.set_title(f"{label} — Prophet Trend Forecast", fontsize=13)
+                            ax.set_xlabel("Date")
+                            ax.set_ylabel(label)
+                            ax.legend(fontsize=9)
+                            ax.spines[["top","right"]].set_visible(False)
+
+                        fig.tight_layout()
+                        st.session_state["steps_sleep_fig"] = fig_to_bytes(fig)
+                        st.success("✅ Steps & Sleep forecasts complete — screenshot this!")
+
+                except Exception as e:
+                    st.error(f"❌ Steps/Sleep forecast error: {e}")
+
+        if st.session_state.get("steps_sleep_fig") is not None:
+            st.image(st.session_state["steps_sleep_fig"], use_container_width=True)
+
+    # =========================================================================
+    # COMPLETION CARD
+    # =========================================================================
+    if st.session_state.cluster_done:
+        st.balloons()
+        st.markdown("""
+        <div class='fp-card'
+             style='border-color:rgba(99,215,196,0.4);text-align:center;padding:2rem;margin-top:1rem'>
+          <div style='font-size:2rem'>🎉</div>
+          <h2 style='color:#63d7c4'>Pipeline Complete</h2>
+          <p style='color:#6b7a96'>
+            All ML stages finished — TSFresh → Prophet → KMeans → DBSCAN → t-SNE → Elbow → Steps/Sleep Forecast
+          </p>
+        </div>""", unsafe_allow_html=True)
+
+    # =========================================================================
+    # ML-5 — MILESTONE 2 SUMMARY  ← moved to the very end
+    # =========================================================================
+    if st.session_state.cluster_done:
+        st.divider()
+        step_hdr("ML‑5", "Milestone 2 Summary")
+
+        _feat_df   = st.session_state.get("feat_df")
+        _features  = st.session_state.get("features")
+        _km_labels = st.session_state.get("km_labels")
+        _db_labels = st.session_state.get("db_labels")
+        _k_used    = st.session_state.get("k_val_used", k_val)
+
+        if _feat_df is not None and _km_labels is not None and _db_labels is not None:
+            _n_users   = _feat_df.shape[0]
+            _n_feats   = _features.shape[1] if _features is not None else "N/A"
+            _n_clust   = len(np.unique(_db_labels[_db_labels != -1]))
+            _n_noise   = int((_db_labels == -1).sum())
+            _noise_pct = _n_noise / len(_db_labels) * 100
+            _km_dist   = {int(k): int(v) for k, v in
+                          zip(*np.unique(_km_labels, return_counts=True))}
+
             st.markdown(f"""
-            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
-                        padding:0.6rem 1rem;margin-bottom:0.5rem;font-family:var(--mono);font-size:0.78rem;
-                        display:flex;gap:10px;align-items:center;">
-              <span style="color:var(--pink)">📸</span>
-              <span style="color:var(--muted)">{cell}</span><span>—</span><span>{desc}</span>
+            <div class='log-box'>
+              <span style='color:#34d399;font-weight:700'>✅ Dataset</span>
+              <span style='color:#6b7a96'> : Real Fitbit device data</span><br>
+              &nbsp;&nbsp;&nbsp;Users &nbsp;&nbsp;: <span style='color:#e2eaf4'>{_n_users}</span>
+              &nbsp;&nbsp;|&nbsp;&nbsp;
+              Days &nbsp;&nbsp;: <span style='color:#e2eaf4'>31 (March–April 2016)</span><br>
+
+              <span style='color:#34d399;font-weight:700'>✅ TSFresh features extracted</span>
+              <span style='color:#63d7c4'> : {_n_feats} features</span><br>
+              &nbsp;&nbsp;&nbsp;Source : <span style='color:#6b7a96'>Real minute-level heart rate data</span><br>
+
+              <span style='color:#34d399;font-weight:700'>✅ Prophet models fitted</span><br>
+              &nbsp;&nbsp;&nbsp;Heart Rate &nbsp;— 30-day forecast, 90% CI<br>
+              &nbsp;&nbsp;&nbsp;Steps &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 30-day forecast, 80% CI<br>
+              &nbsp;&nbsp;&nbsp;Sleep &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 30-day forecast, 80% CI<br>
+
+              <span style='color:#34d399;font-weight:700'>✅ KMeans</span>
+              <span style='color:#63d7c4'> : {_k_used} clusters identified</span><br>
+              &nbsp;&nbsp;&nbsp;Distribution : <span style='color:#e2eaf4'>{_km_dist}</span><br>
+
+              <span style='color:#34d399;font-weight:700'>✅ DBSCAN</span>
+              <span style='color:#63d7c4'> : {_n_clust} clusters, {_n_noise} noise/outlier users</span><br>
+              &nbsp;&nbsp;&nbsp;Noise % : <span style='color:#fbbf24'>{_noise_pct:.1f}%</span><br>
+
+              <span style='color:#818cf8;font-weight:700'>📸 Screenshots to submit:</span><br>
+              &nbsp;&nbsp;&nbsp;1. TSFresh feature matrix heatmap<br>
+              &nbsp;&nbsp;&nbsp;2. Prophet HR forecast with confidence interval<br>
+              &nbsp;&nbsp;&nbsp;3. Steps and Sleep Prophet forecasts<br>
+              &nbsp;&nbsp;&nbsp;4. KMeans PCA scatter plot<br>
+              &nbsp;&nbsp;&nbsp;5. DBSCAN PCA scatter plot<br>
+              &nbsp;&nbsp;&nbsp;6. t-SNE projection (both models)<br>
+              &nbsp;&nbsp;&nbsp;7. Cluster profiles bar chart
             </div>""", unsafe_allow_html=True)

@@ -184,6 +184,28 @@ hr { border-color:var(--border) !important; }
 .nav-dot-inactive { width:8px;height:8px;border-radius:50%;border:1.5px solid #6b7a96;flex-shrink:0; }
 .nav-label-active   { color:#e2eaf4; font-weight:600; }
 .nav-label-inactive { color:#6b7a96; }
+
+/* NAV BUTTON STYLES */
+.nav-btn-active {
+  display:block; width:100%; padding:12px 16px;
+  background:rgba(99,215,196,0.12);
+  border:1px solid rgba(99,215,196,0.35);
+  border-radius:12px; margin-bottom:8px;
+  color:#e2eaf4 !important; font-weight:700;
+  font-family:'Syne',sans-serif;
+  font-size:0.9rem; cursor:pointer;
+  text-align:left;
+}
+.nav-btn-inactive {
+  display:block; width:100%; padding:12px 16px;
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(99,215,196,0.1);
+  border-radius:12px; margin-bottom:8px;
+  color:#6b7a96 !important; font-weight:600;
+  font-family:'Syne',sans-serif;
+  font-size:0.9rem; cursor:pointer;
+  text-align:left;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -231,17 +253,23 @@ for k in ["daily","steps","intensity","sleep","hr","features",
           "master_df","cluster_summary",
           "tsfresh_fig","prophet_fig","cluster_fig",
           "cluster_bar_fig","elbow_fig","steps_sleep_fig",
-          "X_scaled","km_labels","db_labels","k_val_used","available_cols","feat_df"]:
+          "X_scaled","km_labels","db_labels","k_val_used","available_cols","feat_df",
+          "df","clean_df","milestone1_loaded"]:
     if k not in st.session_state:
         st.session_state[k] = None
 
 if "raw_files" not in st.session_state:
     st.session_state["raw_files"] = {}
 
+# Active section: "preprocessing" or "pattern_extraction"
+if "active_section" not in st.session_state:
+    st.session_state["active_section"] = "preprocessing"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
+    # Logo
     st.markdown("""
     <div style='display:flex;align-items:center;gap:10px;padding:4px 0 6px 0'>
       <span style='font-size:1.4rem'>🩺</span>
@@ -253,16 +281,63 @@ with st.sidebar:
 
     st.divider()
 
-    page = st.radio(
-        "Navigate",
-        ["📂  Milestone 1 — Data Processing",
-         "🤖  Milestone 2 — Machine Learning"]
+    # ── Navigation Buttons ──
+    st.markdown(
+        "<div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;"
+        "letter-spacing:1px;font-weight:700;margin-bottom:10px'>📌 Pipeline Sections</div>",
+        unsafe_allow_html=True
     )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if st.button("🔧 Preprocessing", use_container_width=True,
+                     type="primary" if st.session_state.active_section == "preprocessing" else "secondary"):
+            st.session_state.active_section = "preprocessing"
+            st.rerun()
+    with col_b:
+        if st.button("🤖 Pattern Extraction", use_container_width=True,
+                     type="primary" if st.session_state.active_section == "pattern_extraction" else "secondary"):
+            st.session_state.active_section = "pattern_extraction"
+            st.rerun()
 
     st.divider()
 
-    if "Milestone 2" in page:
-        # Progress bar — 5 stages so 100% only after Steps/Sleep forecast
+    # ── Section-specific sidebar content ──
+    if st.session_state.active_section == "preprocessing":
+        st.markdown("""
+        <div style='font-size:0.72rem;color:#6b7a96;line-height:2'>
+          <div style='color:#63d7c4;font-weight:700;margin-bottom:6px'>🔧 Preprocessing Steps</div>
+          ① Upload CSV Dataset<br>
+          ② View Missing Values<br>
+          ③ Run Data Cleaning<br>
+          ④ Explore Distributions<br>
+          ⑤ Download Clean CSV
+        </div>""", unsafe_allow_html=True)
+
+        st.divider()
+
+        # Preprocessing status
+        m1_loaded = st.session_state.get("milestone1_loaded") or False
+        m1_clean  = st.session_state.get("clean_df") is not None
+
+        st.markdown(
+            "<div style='font-size:0.7rem;color:#6b7a96;text-transform:uppercase;"
+            "letter-spacing:1px;font-weight:700;margin-bottom:8px'>Status</div>",
+            unsafe_allow_html=True
+        )
+        def sidebar_status(done, label):
+            color = "#34d399" if done else "#6b7a96"
+            icon  = "✓" if done else "○"
+            st.markdown(
+                f"<div style='font-size:0.8rem;color:{color};padding:3px 0'>"
+                f"{icon} {label}</div>",
+                unsafe_allow_html=True
+            )
+        sidebar_status(m1_loaded, "Dataset Loaded")
+        sidebar_status(m1_clean,  "Data Cleaned")
+
+    else:
+        # Pattern Extraction sidebar
         fl  = st.session_state.files_loaded
         tf  = st.session_state.tsfresh_done
         pf  = st.session_state.prophet_done
@@ -327,28 +402,38 @@ with st.sidebar:
           ⑤ PCA Projection<br>
           ⑥ t-SNE Visualization
         </div>""", unsafe_allow_html=True)
-    else:
-        k_val   = 3
-        eps_val = 2.2
+
+# Set defaults if not in pattern extraction
+if st.session_state.active_section != "pattern_extraction":
+    k_val   = 3
+    eps_val = 2.2
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown("""
+active = st.session_state.active_section
+section_label = "Preprocessing" if active == "preprocessing" else "Pattern Extraction"
+section_icon  = "🔧" if active == "preprocessing" else "🤖"
+
+st.markdown(f"""
 <div style='padding:1rem 0 0.3rem 0'>
   <h1 style='margin:0'>🩺 FitPulse <span style='color:#63d7c4'>Analytics</span></h1>
   <p style='color:#6b7a96;font-size:0.85rem;margin-top:4px'>
-    Fitness ML Pipeline — Data Processing & Machine Learning
+    {section_icon} Currently viewing: <span style='color:#63d7c4;font-weight:700'>{section_label}</span>
+    &nbsp;·&nbsp; Fitness ML Pipeline
   </p>
 </div>""", unsafe_allow_html=True)
 st.divider()
 
 # =============================================================================
-# MILESTONE 1 — DATA PROCESSING
+# PREPROCESSING SECTION (was Milestone 1)
 # =============================================================================
-if "Milestone 1" in page:
+if active == "preprocessing":
 
-    st.markdown("## 📂 Upload Dataset")
+    st.markdown("## 🔧 Data Preprocessing")
+    st.caption("Upload a fitness CSV, inspect missing values, clean the data, and explore distributions.")
+
+    st.markdown("### 📂 Upload Dataset")
     file = st.file_uploader("Upload your fitness CSV", type=["csv"])
 
     if file:
@@ -364,7 +449,7 @@ if "Milestone 1" in page:
         with st.expander("🔎 Raw Data Preview", expanded=True):
             st.dataframe(df.head(10), use_container_width=True)
 
-        st.markdown("## 🔍 Missing Values Analysis")
+        st.markdown("### 🔍 Missing Values Analysis")
         missing       = df.isnull().sum()
         total_missing = missing.sum()
 
@@ -391,7 +476,7 @@ if "Milestone 1" in page:
         else:
             st.success("🎉 No missing values found!")
 
-        st.markdown("## 🛠 Data Cleaning")
+        st.markdown("### 🛠 Data Cleaning")
         if st.button("▶  Run Preprocessing"):
             with st.spinner("Cleaning data…"):
                 df_clean = df.copy()
@@ -402,12 +487,12 @@ if "Milestone 1" in page:
             st.success("✅ Cleaning complete — missing values interpolated / filled.")
 
     if st.session_state.get("clean_df") is not None:
-        st.markdown("## 📑 Cleaned Dataset")
+        st.markdown("### 📑 Cleaned Dataset")
         st.dataframe(st.session_state["clean_df"].head(10), use_container_width=True)
         csv = st.session_state["clean_df"].to_csv(index=False).encode()
         st.download_button("⬇  Download Clean CSV", csv, "clean_dataset.csv", mime="text/csv")
 
-        st.markdown("## 📊 Exploratory Data Analysis")
+        st.markdown("### 📊 Exploratory Data Analysis")
         df_eda   = st.session_state["clean_df"]
         num_cols = df_eda.select_dtypes(include=np.number).columns.tolist()
 
@@ -430,9 +515,12 @@ if "Milestone 1" in page:
             st.info("No numeric columns found for EDA.")
 
 # =============================================================================
-# MILESTONE 2 — MACHINE LEARNING
+# PATTERN EXTRACTION SECTION (was Milestone 2)
 # =============================================================================
-if "Milestone 2" in page:
+if active == "pattern_extraction":
+
+    st.markdown("## 🤖 Pattern Extraction — ML Pipeline")
+    st.caption("Upload Fitbit CSV files, extract features, forecast trends, and cluster users.")
 
     # ── Required file signatures ──
     REQUIRED = {
@@ -543,7 +631,6 @@ if "Milestone 2" in page:
                     master.rename(columns={id_col: "Id"}, inplace=True)
                     if date_col: master.rename(columns={date_col: "Date"}, inplace=True)
 
-                    # Merge avg HR per user-date
                     hr_id = next((c for c in hr.columns if c.lower() == "id"), None)
                     hr_t  = next((c for c in hr.columns if c.lower() in
                                   ("time","datetime","timestamp","date","activityminute")), None)
@@ -554,7 +641,6 @@ if "Milestone 2" in page:
                         hr_agg.columns = ["Id","Date","AvgHR"]
                         master = master.merge(hr_agg, on=["Id","Date"], how="left")
 
-                    # Merge total sleep minutes
                     sl_id = next((c for c in sleep.columns if c.lower() == "id"), None)
                     sl_d  = next((c for c in sleep.columns if "date" in c.lower()), None)
                     if sl_id and sl_d and "Date" in master.columns:
@@ -608,7 +694,6 @@ if "Milestone 2" in page:
         hr2  = st.session_state.hr
         hr_t = next((c for c in hr2.columns if c.lower() in
                      ("time","datetime","timestamp","date","activityminute")), None)
-        hr_v = next((c for c in hr2.columns if c.lower() == "value"), None)
 
         rows_before     = len(hr2)
         rows_after      = rows_before
@@ -747,12 +832,11 @@ if "Milestone 2" in page:
                 except Exception as e:
                     st.error(f"❌ TSFresh error: {e}")
 
-        # Always show persisted figure
         if st.session_state["tsfresh_fig"] is not None:
             st.image(st.session_state["tsfresh_fig"], use_container_width=True)
 
     # =========================================================================
-    # ML-2 — Prophet  (FAST: daily aggregation, MAP estimation, ≤60 rows)
+    # ML-2 — Prophet
     # =========================================================================
     if st.session_state.tsfresh_done:
         st.divider()
@@ -772,7 +856,6 @@ if "Milestone 2" in page:
                     if not t_col or not v_col:
                         st.error("Could not find Date/Value columns in Heart Rate dataset.")
                     else:
-                        # ── KEY FIX: aggregate to DAILY averages first ──
                         hr4["_dt"]   = pd.to_datetime(hr4[t_col], errors="coerce")
                         hr4["_date"] = hr4["_dt"].dt.date
                         agg = (hr4.groupby("_date")[v_col]
@@ -783,16 +866,13 @@ if "Milestone 2" in page:
                         agg["y"]  = pd.to_numeric(agg["y"], errors="coerce")
                         agg.dropna(inplace=True)
                         agg.sort_values("ds", inplace=True)
-
-                        # Keep last 60 days max — more than enough for Prophet
                         agg = agg.tail(60).reset_index(drop=True)
 
-                        # ── MAP estimation (mcmc_samples=0) — 10x faster ──
                         model = Prophet(
                             interval_width=0.90,
                             daily_seasonality=False,
                             weekly_seasonality=True,
-                            mcmc_samples=0          # MAP, not full MCMC
+                            mcmc_samples=0
                         )
                         model.fit(agg)
                         future   = model.make_future_dataframe(periods=30)
@@ -823,12 +903,11 @@ if "Milestone 2" in page:
                 except Exception as e:
                     st.error(f"❌ Prophet error: {e}")
 
-        # Always show persisted figure
         if st.session_state["prophet_fig"] is not None:
             st.image(st.session_state["prophet_fig"], use_container_width=True)
 
     # =========================================================================
-    # ML-3 — Clustering (KMeans · DBSCAN · PCA · t-SNE)
+    # ML-3 — Clustering
     # =========================================================================
     if st.session_state.prophet_done:
         st.divider()
@@ -855,17 +934,14 @@ if "Milestone 2" in page:
                     scaler2 = StandardScaler()
                     X       = scaler2.fit_transform(feat_df)
 
-                    # PCA
                     pca   = PCA(n_components=2)
                     X_pca = pca.fit_transform(X)
 
-                    # KMeans
                     kmeans    = KMeans(n_clusters=k_val, n_init=10, random_state=42)
                     km_labels = kmeans.fit_predict(X)
 
                     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
 
-                    # — KMeans PCA —
                     for c in np.unique(km_labels):
                         m = km_labels == c
                         axes[0].scatter(X_pca[m,0], X_pca[m,1],
@@ -876,7 +952,6 @@ if "Milestone 2" in page:
                     axes[0].legend(fontsize=8)
                     axes[0].set_xlabel("PC 1"); axes[0].set_ylabel("PC 2")
 
-                    # — DBSCAN —
                     db        = DBSCAN(eps=eps_val, min_samples=2)
                     db_labels = db.fit_predict(X)
                     for i, c in enumerate(np.unique(db_labels)):
@@ -894,7 +969,6 @@ if "Milestone 2" in page:
                     axes[1].legend(fontsize=8)
                     axes[1].set_xlabel("PC 1"); axes[1].set_ylabel("PC 2")
 
-                    # — t-SNE —
                     perp   = min(30, max(5, len(X) - 1))
                     tsne   = TSNE(n_components=2, perplexity=perp,
                                   random_state=42, max_iter=1000)
@@ -922,7 +996,6 @@ if "Milestone 2" in page:
                     st.session_state["cluster_summary"] = (
                         feat_df.groupby("Cluster")[available].mean().round(1)
                     )
-                    # Store extra metadata for post-cluster sections
                     st.session_state["X_scaled"]       = X
                     st.session_state["km_labels"]      = km_labels
                     st.session_state["db_labels"]      = db_labels
@@ -935,11 +1008,9 @@ if "Milestone 2" in page:
                 except Exception as e:
                     st.error(f"❌ Clustering error: {e}")
 
-        # Always show persisted figure
         if st.session_state["cluster_fig"] is not None:
             st.image(st.session_state["cluster_fig"], use_container_width=True)
 
-        # Always show cluster summary table
         if st.session_state.get("cluster_summary") is not None:
             step_hdr("ML‑4", "Cluster Profiles")
             st.dataframe(st.session_state["cluster_summary"], use_container_width=True)
@@ -951,24 +1022,19 @@ if "Milestone 2" in page:
         st.divider()
         step_hdr("ML‑6", "Cluster Profiles — Bar Chart & Interpretation")
 
-        _summary  = st.session_state.get("cluster_summary")
-        _k_used   = st.session_state.get("k_val_used", k_val)
-        _feat_df  = st.session_state.get("feat_df")
+        _summary   = st.session_state.get("cluster_summary")
+        _k_used    = st.session_state.get("k_val_used", k_val)
+        _feat_df   = st.session_state.get("feat_df")
         _km_labels = st.session_state.get("km_labels")
-        _avail    = st.session_state.get("available_cols", [])
+        _avail     = st.session_state.get("available_cols", [])
 
         if _summary is not None and _feat_df is not None:
-            # Dataframe display
             st.dataframe(_summary, use_container_width=True)
 
-            # Bar chart
             plot_cols = [c for c in
                          ["TotalSteps","Calories","VeryActiveMinutes",
                           "SedentaryMinutes","TotalSleepMinutes"]
                          if c in _summary.columns]
-
-            if "cluster_bar_fig" not in st.session_state:
-                st.session_state["cluster_bar_fig"] = None
 
             fig, ax = plt.subplots(figsize=(13, 5))
             _summary[plot_cols].plot(
@@ -988,10 +1054,8 @@ if "Milestone 2" in page:
             ax.spines[["top","right"]].set_visible(False)
             fig.tight_layout()
             st.session_state["cluster_bar_fig"] = fig_to_bytes(fig)
-
             st.image(st.session_state["cluster_bar_fig"], use_container_width=True)
 
-            # Interpretation
             st.markdown("### 📊 Cluster Interpretation")
             interp_cols = st.columns(min(_k_used, 4))
             for i, col in enumerate(interp_cols):
@@ -1085,10 +1149,8 @@ if "Milestone 2" in page:
                     daily3.columns = [c.strip() for c in daily3.columns]
                     sleep3.columns = [c.strip() for c in sleep3.columns]
 
-                    # Steps — from daily activity
                     d_date = next((c for c in daily3.columns if "date" in c.lower()), None)
 
-                    # Sleep — aggregate from raw minute-sleep file directly
                     sl_id  = next((c for c in sleep3.columns if c.lower() == "id"), None)
                     sl_d   = next((c for c in sleep3.columns if "date" in c.lower()), None)
                     sl_v   = next((c for c in sleep3.columns if c.lower() == "value"), None)
@@ -1097,12 +1159,10 @@ if "Milestone 2" in page:
                     if d_date and "TotalSteps" in daily3.columns:
                         configs.append(("TotalSteps", d_date, daily3, "#63d7c4", "Steps"))
 
-                    # Build sleep daily totals from raw sleep file
                     if sl_d and sl_v:
                         sleep3["_dt"]    = pd.to_datetime(sleep3[sl_d], errors="coerce")
                         sleep3["_date"]  = sleep3["_dt"].dt.date.astype(str)
                         sleep3[sl_v]     = pd.to_numeric(sleep3[sl_v], errors="coerce")
-                        # Count minutes per day (each row = 1 minute of sleep)
                         sl_daily = (sleep3.groupby("_date")
                                           .size()
                                           .reset_index(name="SleepMinutes"))
@@ -1125,7 +1185,6 @@ if "Milestone 2" in page:
                             agg["y"]  = pd.to_numeric(agg["y"], errors="coerce")
                             agg = agg.dropna().sort_values("ds").tail(60)
 
-                            # Guard: need at least 2 rows for Prophet
                             if len(agg) < 2:
                                 ax.text(0.5, 0.5, f"Not enough data for {label} forecast",
                                         ha="center", va="center", transform=ax.transAxes,
@@ -1189,11 +1248,11 @@ if "Milestone 2" in page:
         </div>""", unsafe_allow_html=True)
 
     # =========================================================================
-    # ML-5 — MILESTONE 2 SUMMARY  ← moved to the very end
+    # ML-5 — MILESTONE 2 SUMMARY
     # =========================================================================
     if st.session_state.cluster_done:
         st.divider()
-        step_hdr("ML‑5", "Milestone 2 Summary")
+        step_hdr("ML‑5", "Pattern Extraction Summary")
 
         _feat_df   = st.session_state.get("feat_df")
         _features  = st.session_state.get("features")

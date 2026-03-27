@@ -1,34 +1,29 @@
 # 🩺 FitPulse Analytics — Fitness ML Pipeline
 
-FitPulse Analytics is an end-to-end **Machine Learning pipeline** built using **Streamlit** that processes Fitbit-style fitness data to perform:
-
-* Data preprocessing & cleaning
-* Feature extraction from time-series data
-* Forecasting using time-series models
-* User behavior clustering
-* Interactive visualization
+FitPulse Analytics is an end-to-end **Machine Learning pipeline for fitness data analysis**, built with Streamlit.
+It processes Fitbit-style datasets to perform **data preprocessing, feature extraction, forecasting, clustering, and anomaly detection** within a unified interactive dashboard.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-### 🔧 1. Data Preprocessing
+### 🔧 Data Preprocessing
 
-* Upload CSV fitness dataset
-* Detect and visualize missing values
-* Perform automatic cleaning:
+* Upload CSV datasets
+* Detect & visualize missing values
+* Automatic cleaning:
 
   * Numeric → interpolation
-  * Categorical → fill with "Unknown"
+  * Categorical → "Unknown" fill
 * Exploratory Data Analysis (EDA)
 
 ---
 
-### 🤖 2. Pattern Extraction Pipeline
+### 🤖 Pattern Extraction Pipeline
 
-#### 📁 Multi-file Upload
+#### 📁 Multi-file Dataset Support
 
-Automatically detects required Fitbit datasets:
+Automatically detects:
 
 * Daily Activity
 * Hourly Steps
@@ -40,15 +35,15 @@ Automatically detects required Fitbit datasets:
 
 #### 🧪 TSFresh Feature Extraction
 
-* Extracts statistical features from heart rate time-series
-* Generates feature matrix for each user
-* Displays heatmap visualization
+* Extracts statistical features from time-series data
+* Generates user-level feature matrix
+* Heatmap visualization
 
 ---
 
-#### 📈 Prophet Forecasting
+#### 📈 Time-Series Forecasting (Prophet)
 
-* Forecasts future trends (30 days ahead):
+* 30-day prediction for:
 
   * Heart Rate
   * Steps
@@ -57,31 +52,31 @@ Automatically detects required Fitbit datasets:
 
 ---
 
-#### 🔵 Clustering
+#### 🔵 Clustering & Segmentation
 
-* **KMeans Clustering**
-* **DBSCAN Clustering (outlier detection)**
+* KMeans clustering
+* DBSCAN (outlier detection)
 * Feature scaling using StandardScaler
 
 ---
 
 #### 📊 Dimensionality Reduction
 
-* PCA (2D visualization)
-* t-SNE (non-linear visualization)
+* PCA (linear visualization)
+* t-SNE (non-linear embedding)
 
 ---
 
 #### 📉 Elbow Method
 
-* Helps determine optimal number of clusters
+* Determines optimal number of clusters
 
 ---
 
 #### 📊 Cluster Profiling
 
-* Displays average values per cluster
-* Automatically labels:
+* Aggregated cluster insights
+* Automatic labeling:
 
   * 🏃 Highly Active
   * 🚶 Moderately Active
@@ -91,30 +86,26 @@ Automatically detects required Fitbit datasets:
 
 ## 🧱 Tech Stack
 
-* **Frontend/UI**: Streamlit
-* **Data Processing**: Pandas, NumPy
-* **Visualization**: Matplotlib, Seaborn
-* **Machine Learning**:
-
-  * Scikit-learn (KMeans, DBSCAN, PCA, TSNE)
-* **Time-Series**:
-
-  * Prophet (by Meta)
-* **Feature Engineering**:
-
-  * TSFresh
+| Category            | Tools                       |
+| ------------------- | --------------------------- |
+| Frontend            | Streamlit                   |
+| Data Processing     | Pandas, NumPy               |
+| Visualization       | Matplotlib, Seaborn, Plotly |
+| Machine Learning    | Scikit-learn                |
+| Feature Engineering | TSFresh                     |
+| Forecasting         | Prophet                     |
 
 ---
 
 ## 📂 Project Structure
 
-```
+```bash
 fitpulse/
 │
-├── app.py                # Main Streamlit app
-├── requirements.txt      # Dependencies
-├── README.md             # Project documentation
-└── datasets/             # (Optional) Sample data
+├── main_app.py         # Main Streamlit application
+├── requirements.txt    # Dependencies
+├── README.md           # Documentation
+└── datasets/           # (Optional) sample data
 ```
 
 ---
@@ -134,62 +125,53 @@ cd fitpulse
 pip install -r requirements.txt
 ```
 
-### 3. Run the App
+### 3. Run Application
 
 ```bash
-streamlit run app.py
+streamlit run main_app.py
 ```
-
----
-
-## 📸 Output Screens (Suggested)
-
-Include screenshots of:
-
-* TSFresh heatmap
-* Prophet forecast
-* Clustering (PCA & t-SNE)
-* Elbow curve
-* Cluster profiles
 
 ---
 
 ## 📊 Dataset
 
-This project uses **Fitbit-style fitness datasets**, including:
+The project uses Fitbit-style datasets including:
 
 * Daily activity logs
 * Heart rate time-series
-* Sleep records
+* Sleep tracking data
+
+---
+
+## 📸 Suggested Outputs
+
+* TSFresh feature heatmap
+* Prophet forecast plots
+* PCA & t-SNE clustering
+* Elbow curve
+* Cluster profiles
 
 ---
 
 ## ⚠️ Limitations
 
-* Basic data cleaning (no advanced outlier handling)
-* No model evaluation metrics
-* DBSCAN parameters not optimized dynamically
-* Forecast accuracy depends on data quality
+* Basic preprocessing (no advanced outlier handling)
+* No formal model evaluation metrics
+* DBSCAN parameters require manual tuning
+* Forecast accuracy depends on input data quality
 
 ---
 
-## 🌟 Future Improvements
+## 🔮 Future Improvements
 
 * Add model evaluation metrics
-* Auto-tune clustering parameters
-* Improve feature selection after TSFresh
-* Deploy as web application
-* Add real-time data support
-
----
-
-## 👨‍💻 Author
-
-**SATIN**
+* Automate hyperparameter tuning
+* Improve feature selection post-TSFresh
+* Deploy as a web application
+* Integrate real-time wearable data
 
 ---
 
 ## 📄 License
 
-This project is for educational and academic use.
-# FitPulse-Health-Anomaly-Detection-from-Fitness-Devices
+This project is licensed under the MIT License.
